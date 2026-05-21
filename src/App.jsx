@@ -267,7 +267,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
 
       <button onClick={onHistory} style={{margin:'0 16px 12px',padding:'11px 16px',background:'#f0faf4',border:`1px solid ${P}30`,borderRadius:12,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',width:'calc(100% - 32px)'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}><span>📋</span><span style={{fontSize:14,fontWeight:600,color:P}}>내 주문 내역 보기</span></div>
-        <span style={{color:'#aaa',fontSize:18}}>›</span>
+        <span style={{color:'#555',fontSize:18}}>›</span>
       </button>
 
       <div style={{padding:'4px 20px 8px',fontSize:15,fontWeight:700,color:'#222'}}>카테고리</div>
@@ -357,8 +357,8 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
         </div>
       </div>
       <div style={{position:'sticky',bottom:0,background:'#fff',padding:'12px 16px',borderTop:'1px solid #f0f0f0',display:'flex',gap:10}}>
-        <button style={{width:46,height:46,borderRadius:50,border:'1.5px solid #ddd',background:'none',fontSize:20,cursor:'pointer'}}>♡</button>
-        <button onClick={onBack} style={{flex:1,height:46,borderRadius:24,border:'1.5px solid #ddd',background:'none',fontSize:15,fontWeight:700,cursor:'pointer'}}>닫기</button>
+        <button style={{width:46,height:46,borderRadius:50,border:'1.5px solid #ddd',background:'#fff',fontSize:20,cursor:'pointer',color:'#e53935'}}>♡</button>
+        <button onClick={onBack} style={{flex:1,height:46,borderRadius:24,border:'1.5px solid #ddd',background:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',color:'#333'}}>닫기</button>
         <button onClick={()=>onAddToCart({drink,selectedSize:selSz,optionChoices:opts,qty,totalPrice:total})} style={{flex:2,height:46,borderRadius:24,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>담기</button>
       </div>
     </div>
@@ -489,7 +489,7 @@ function HistoryScreen({ userName, onBack }) {
       <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>내 주문 내역</span><span style={{fontSize:12,color:'#aaa'}}>총 {orders.length}건</span></div>
       <div style={{display:'flex',borderBottom:'2px solid #f0f0f0',flexShrink:0}}>
         {[{id:'recent',label:'⏰ 최근'},{id:'monthly',label:'📅 월별'}].map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'12px',border:'none',background:'none',fontSize:13,fontWeight:700,cursor:'pointer',color:tab===t.id?P:'#aaa',borderBottom:`2px solid ${tab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'12px',border:'none',background:'none',fontSize:13,fontWeight:700,cursor:'pointer',color:'#111',borderBottom:`2px solid ${tab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
         ))}
       </div>
       <div style={{flex:1,overflowY:'auto',padding:'8px 0'}}>
@@ -501,7 +501,7 @@ function HistoryScreen({ userName, onBack }) {
             <div key={mk} style={{margin:'0 16px 12px',border:'1px solid #f0f0f0',borderRadius:14,overflow:'hidden'}}>
               <button onClick={()=>setOpen(p=>({...p,[mk]:!p[mk]}))} style={{width:'100%',padding:'14px 16px',background:isOpen?'#f0faf4':'#fafafa',border:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}>
                 <div style={{textAlign:'left'}}><div style={{fontSize:15,fontWeight:700}}>{fmtMonth(mk)}</div><div style={{fontSize:12,color:'#888',marginTop:2}}>{mo.length}건 · {fmt(mTotal)}</div></div>
-                <span style={{color:'#aaa',fontSize:18}}>{isOpen?'∧':'∨'}</span>
+                <span style={{color:'#555',fontSize:18}}>{isOpen?'∧':'∨'}</span>
               </button>
               {isOpen&&mo.map(o=><OrderCard key={o.id} order={o} compact />)}
             </div>
@@ -554,7 +554,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
       </div>
       <div style={{display:'flex',borderBottom:'2px solid #f0f0f0',flexShrink:0}}>
         {[{id:"drinks",label:"🥤 음료"},{id:"categories",label:"📂 카테고리"},{id:"orders",label:"📊 주문현황"},{id:"settings",label:"⚙️ 설정"}].map(t=>(
-          <button key={t.id} onClick={()=>onTabChange(t.id)} style={{flex:1,padding:'10px 2px',border:'none',background:'none',fontSize:11,fontWeight:700,cursor:'pointer',color:activeTab===t.id?P:'#aaa',borderBottom:`2px solid ${activeTab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
+          <button key={t.id} onClick={()=>onTabChange(t.id)} style={{flex:1,padding:'10px 2px',border:'none',background:'none',fontSize:11,fontWeight:700,cursor:'pointer',color:'#111',borderBottom:`2px solid ${activeTab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
         ))}
       </div>
       <div style={{flex:1,overflowY:'auto'}}>
@@ -580,7 +580,7 @@ function DrinksTab({ drinks, onEdit, onDelete }) {
           <button onClick={()=>setConfirm(d.id)} style={S.delBtn}>삭제</button>
         </div>
       ))}
-      {confirm&&<div style={S.overlay}><div style={{background:'#fff',borderRadius:20,padding:24,width:260,margin:'auto'}}><div style={{fontWeight:700,textAlign:'center',marginBottom:4}}>음료를 삭제할까요?</div><div style={{fontSize:13,color:'#888',textAlign:'center',marginBottom:20}}>삭제 후 복구할 수 없습니다</div><div style={{display:'flex',gap:10}}><button onClick={()=>setConfirm(null)} style={{flex:1,height:44,borderRadius:22,border:'1px solid #ddd',background:'none',cursor:'pointer',fontWeight:600}}>취소</button><button onClick={()=>{onDelete(confirm);setConfirm(null);}} style={{flex:1,height:44,borderRadius:22,border:'none',background:'#e53935',color:'#fff',fontWeight:700,cursor:'pointer'}}>삭제</button></div></div></div>}
+      {confirm&&<div style={S.overlay}><div style={{background:'#fff',borderRadius:20,padding:24,width:260,margin:'auto'}}><div style={{fontWeight:700,textAlign:'center',marginBottom:4}}>음료를 삭제할까요?</div><div style={{fontSize:13,color:'#888',textAlign:'center',marginBottom:20}}>삭제 후 복구할 수 없습니다</div><div style={{display:'flex',gap:10}}><button onClick={()=>setConfirm(null)} style={{flex:1,height:44,borderRadius:22,border:'1px solid #ddd',background:'#f5f5f5',cursor:'pointer',fontWeight:600,color:'#333'}}>취소</button><button onClick={()=>{onDelete(confirm);setConfirm(null);}} style={{flex:1,height:44,borderRadius:22,border:'2px solid #e53935',background:'#fff0f0',color:'#c62828',fontWeight:700,cursor:'pointer'}}>삭제</button></div></div></div>}
     </div>
   );
 }
@@ -651,7 +651,7 @@ function AdminOrdersTab() {
             <div style={{fontSize:14,fontWeight:700,color:'#111'}}>{label}</div>
             <div style={{fontSize:12,color:'#888',marginTop:2}}>{sub} · {grpOrders.length}건 · <span style={{color:P,fontWeight:700}}>{fmt(total)}</span></div>
           </div>
-          <span style={{color:'#aaa',fontSize:18}}>{isOpen?'∧':'∨'}</span>
+          <span style={{color:'#555',fontSize:18}}>{isOpen?'∧':'∨'}</span>
         </button>
         {isOpen&&(
           <div style={{background:'#fff',padding:'0 16px 12px',borderTop:'1px solid #f5f5f5'}}>
@@ -694,7 +694,7 @@ function AdminOrdersTab() {
       {/* 서브탭 */}
       <div style={{display:'flex',borderBottom:'2px solid #f0f0f0',flexShrink:0}}>
         {[{id:'daily',label:'📅 일별'},{id:'monthly',label:'🗓 월별'},{id:'customer',label:'👤 주문자별'}].map(t=>(
-          <button key={t.id} onClick={()=>setSubTab(t.id)} style={{flex:1,padding:'10px 4px',border:'none',background:'none',fontSize:12,fontWeight:700,cursor:'pointer',color:subTab===t.id?P:'#aaa',borderBottom:`2px solid ${subTab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
+          <button key={t.id} onClick={()=>setSubTab(t.id)} style={{flex:1,padding:'10px 4px',border:'none',background:'none',fontSize:12,fontWeight:700,cursor:'pointer',color:'#111',borderBottom:`2px solid ${subTab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
         ))}
       </div>
       <div style={{flex:1,overflowY:'auto',paddingTop:8}}>
@@ -973,7 +973,7 @@ function BottomNav({ screen, setScreen, cartCount }) {
         return (
           <button key={t.id} onClick={()=>setScreen(t.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0 14px',background:'none',border:'none',cursor:'pointer'}}>
             <div style={{position:'relative',fontSize:22,lineHeight:1.2}}>{t.icon}{t.id==='cart'&&cartCount>0&&<span style={S.badge}>{cartCount}</span>}</div>
-            <span style={{fontSize:10,color:active?P:'#aaa',fontWeight:active?700:400,marginTop:2}}>{t.label}</span>
+            <span style={{fontSize:10,color:'#111',fontWeight:active?800:500,marginTop:2}}>{t.label}</span>
             {active&&<div style={{width:4,height:4,borderRadius:'50%',background:P,marginTop:2}} />}
           </button>
         );
@@ -993,7 +993,7 @@ const S = {
   navTitle:{fontSize:17,fontWeight:700,color:'#111'},
   iconBtn:{background:'none',border:'1px solid #e8e8e8',borderRadius:20,padding:'4px 10px',fontSize:18,cursor:'pointer'},
   badge:{position:'absolute',top:-6,right:-6,background:'#ff4444',color:'#fff',borderRadius:10,fontSize:10,fontWeight:700,padding:'1px 5px',minWidth:16,textAlign:'center'},
-  qtyBtn:{width:36,height:36,borderRadius:50,border:'1.5px solid #ddd',background:'none',fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'},
+  qtyBtn:{width:36,height:36,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#333'},
   overlay:{position:'absolute',inset:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100},
   toast:{position:'absolute',bottom:80,left:'50%',transform:'translateX(-50%)',background:'rgba(0,0,0,0.78)',color:'#fff',borderRadius:20,padding:'9px 18px',fontSize:13,fontWeight:600,whiteSpace:'nowrap',zIndex:200,pointerEvents:'none'},
   empty:{textAlign:'center',color:'#aaa',padding:48,fontSize:14},
