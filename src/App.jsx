@@ -114,6 +114,7 @@ const INIT_SETTINGS = {
   telegram: { enabled: false, token: "", chatId: "" },
   kakao: { enabled: false, accessToken: "" },
   deliveryHours: INIT_DH,
+  adminPassword: "admin1234",
 };
 
 // ─── APP ──────────────────────────────────────────────────────
@@ -132,6 +133,8 @@ export default function App() {
   const [successOrder, setSuccessOrder] = useState(null);
   const [adminTab, setAdminTab] = useState("drinks");
   const [toast, setToast] = useState(null);
+  const [adminLoginModal, setAdminLoginModal] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     Promise.all([getStoredUser(), getStoredSettings()]).then(([user, stored]) => {
@@ -141,6 +144,7 @@ export default function App() {
         school: { ...INIT_SETTINGS.school, ...(stored.school||{}) },
         banner: { ...INIT_SETTINGS.banner, ...(stored.banner||{}) },
         deliveryHours: { ...INIT_DH, ...(stored.deliveryHours||{}) },
+        adminPassword: stored.adminPassword || INIT_SETTINGS.adminPassword,
       }));
       setBooting(false);
     });
@@ -172,16 +176,44 @@ export default function App() {
     <div style={S.shell}>
       <div style={S.phone}>
         <div style={S.statusBar}><span style={{fontWeight:700}}>9:41</span><span>📶 🔋</span></div>
-        {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{setAdminTab("drinks");setScreen("admin");}} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} />}
+        {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>!selCat||d.categoryId===selCat.id)} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
-        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>setScreen("home")} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onSaveSettings={handleSaveSettings} />}
+        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onSaveSettings={handleSaveSettings} />}
         {screen==="adminEdit"&& <AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{setDrinks(p=>d.id?p.map(x=>x.id===d.id?d:x):[...p,{...d,id:Date.now()}]);notify("저장됨 ✅");setScreen("admin");}} />}
+        {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
         {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} />}
         {toast && <div style={S.toast}>{toast}</div>}
         {!["detail","adminEdit"].includes(screen) && <BottomNav screen={screen} setScreen={setScreen} cartCount={cartCount} />}
+      </div>
+    </div>
+  );
+}
+
+// ─── ADMIN LOGIN MODAL ────────────────────────────────────────
+function AdminLoginModal({ correctPassword, onSuccess, onCancel }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const submit = () => {
+    if (pw === correctPassword) { onSuccess(); }
+    else { setErr("비밀번호가 틀렸습니다"); setPw(""); }
+  };
+  return (
+    <div style={S.overlay}>
+      <div style={{background:'#fff',borderRadius:20,padding:'28px 24px',width:280,margin:'auto',boxShadow:'0 10px 40px rgba(0,0,0,0.2)'}}>
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <div style={{fontSize:36}}>🔐</div>
+          <div style={{fontSize:17,fontWeight:800,color:'#111',marginTop:8}}>관리자 인증</div>
+          <div style={{fontSize:12,color:'#888',marginTop:4}}>관리자 비밀번호를 입력하세요</div>
+        </div>
+        <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} onKeyDown={e=>e.key==='Enter'&&submit()} placeholder="비밀번호 입력" autoFocus style={{...S.mInput,textAlign:'center',letterSpacing:4}} />
+        {err&&<div style={{color:'#e53935',fontSize:13,marginBottom:10,textAlign:'center'}}>⚠️ {err}</div>}
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={onCancel} style={{flex:1,height:46,borderRadius:23,border:'1.5px solid #ddd',background:'none',fontSize:15,fontWeight:700,cursor:'pointer'}}>취소</button>
+          <button onClick={submit} style={{flex:1,height:46,borderRadius:23,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>확인</button>
+        </div>
       </div>
     </div>
   );
@@ -837,6 +869,37 @@ function SettingsTab({ settings, onSave }) {
       </div>
 
       <button onClick={save} style={{width:'100%',height:48,borderRadius:24,border:'none',background:saved?'#4caf50':P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',transition:'background 0.3s'}}>{saved?'✅ 저장 완료':'전체 설정 저장'}</button>
+
+      {/* 비밀번호 변경 */}
+      <div style={{marginTop:24}}>
+        <SH>🔐 관리자 비밀번호 변경</SH>
+        <PwChangeSection currentPw={form.adminPassword||'admin1234'} onSave={newPw=>{const updated={...form,adminPassword:newPw}; setForm(updated); onSave(updated);}} />
+      </div>
+    </div>
+  );
+}
+
+function PwChangeSection({ currentPw, onSave }) {
+  const [cur, setCur] = useState("");
+  const [nw, setNw] = useState("");
+  const [nw2, setNw2] = useState("");
+  const [msg, setMsg] = useState(null);
+  const submit = () => {
+    if (cur !== currentPw) { setMsg({ok:false,text:"현재 비밀번호가 틀렸습니다"}); return; }
+    if (nw.length < 4) { setMsg({ok:false,text:"새 비밀번호는 4자 이상이어야 합니다"}); return; }
+    if (nw !== nw2) { setMsg({ok:false,text:"새 비밀번호가 일치하지 않습니다"}); return; }
+    onSave(nw);
+    setCur(""); setNw(""); setNw2("");
+    setMsg({ok:true,text:"비밀번호가 변경되었습니다 ✅"});
+    setTimeout(()=>setMsg(null), 3000);
+  };
+  return (
+    <div style={{background:'#f8f8f8',borderRadius:14,padding:14}}>
+      <input type="password" value={cur} onChange={e=>setCur(e.target.value)} placeholder="현재 비밀번호" style={S.input} />
+      <input type="password" value={nw} onChange={e=>setNw(e.target.value)} placeholder="새 비밀번호 (4자 이상)" style={S.input} />
+      <input type="password" value={nw2} onChange={e=>setNw2(e.target.value)} placeholder="새 비밀번호 확인" style={{...S.input,marginBottom:10}} onKeyDown={e=>e.key==='Enter'&&submit()} />
+      {msg&&<div style={{fontSize:13,color:msg.ok?'#2e7d32':'#e53935',marginBottom:8}}>{msg.text}</div>}
+      <button onClick={submit} style={{width:'100%',height:42,borderRadius:21,border:'none',background:'#333',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>비밀번호 변경</button>
     </div>
   );
 }
