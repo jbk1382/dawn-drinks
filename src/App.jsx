@@ -125,8 +125,12 @@ export default function App() {
   const [selCat, setSelCat] = useState(null);
   const [selDrink, setSelDrink] = useState(null);
   const [cart, setCart] = useState([]);
-  const [drinks, setDrinks] = useState(INIT_DRINKS);
-  const [cats, setCats] = useState(INIT_CATS);
+  const [drinks, setDrinks] = useState(() => {
+    try { const s = localStorage.getItem('hb_drinks'); return s ? JSON.parse(s) : INIT_DRINKS; } catch { return INIT_DRINKS; }
+  });
+  const [cats, setCats] = useState(() => {
+    try { const s = localStorage.getItem('hb_cats'); return s ? JSON.parse(s) : INIT_CATS; } catch { return INIT_CATS; }
+  });
   const [settings, setSettings] = useState(INIT_SETTINGS);
   const [editDrink, setEditDrink] = useState(null);
   const [orderModal, setOrderModal] = useState(false);
@@ -149,6 +153,10 @@ export default function App() {
       setBooting(false);
     });
   }, []);
+
+  // 음료·카테고리 변경 시 자동 저장
+  useEffect(() => { try { localStorage.setItem('hb_drinks', JSON.stringify(drinks)); } catch {} }, [drinks]);
+  useEffect(() => { try { localStorage.setItem('hb_cats', JSON.stringify(cats)); } catch {} }, [cats]);
 
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const cartCount = cart.length;
@@ -175,7 +183,6 @@ export default function App() {
   return (
     <div style={S.shell}>
       <div style={S.phone}>
-        <div style={S.statusBar}><span style={{fontWeight:700}}>9:41</span><span>📶 🔋</span></div>
         {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>!selCat||d.categoryId===selCat.id)} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
@@ -211,7 +218,7 @@ function AdminLoginModal({ correctPassword, onSuccess, onCancel }) {
         <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} onKeyDown={e=>e.key==='Enter'&&submit()} placeholder="비밀번호 입력" autoFocus style={{...S.mInput,textAlign:'center',letterSpacing:4}} />
         {err&&<div style={{color:'#e53935',fontSize:13,marginBottom:10,textAlign:'center'}}>⚠️ {err}</div>}
         <div style={{display:'flex',gap:10}}>
-          <button onClick={onCancel} style={{flex:1,height:46,borderRadius:23,border:'1.5px solid #ddd',background:'none',fontSize:15,fontWeight:700,cursor:'pointer'}}>취소</button>
+          <button onClick={onCancel} style={{flex:1,height:46,borderRadius:23,border:'1.5px solid #ddd',background:'#f5f5f5',fontSize:15,fontWeight:700,cursor:'pointer',color:'#333'}}>취소</button>
           <button onClick={submit} style={{flex:1,height:46,borderRadius:23,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>확인</button>
         </div>
       </div>
@@ -273,7 +280,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
       <div style={{padding:'4px 20px 8px',fontSize:15,fontWeight:700,color:'#222'}}>카테고리</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,padding:'0 16px 16px'}}>
         {categories.map(cat => (
-          <button key={cat.id} onClick={()=>onSelect(cat)} style={{background:'#f8f8f8',border:'none',borderRadius:14,padding:'14px 4px',display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
+          <button key={cat.id} onClick={()=>onSelect(cat)} style={{background:'#f8f8f8',border:'none',borderRadius:14,padding:'14px 4px',display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer',color:'#111'}}>
             <div style={{fontSize:30,marginBottom:5}}>{cat.icon}</div>
             <div style={{fontSize:12,fontWeight:600,color:'#333'}}>{cat.label}</div>
           </button>
@@ -295,7 +302,7 @@ function ListScreen({ category, drinks, onBack, onSelect, cartCount, onCart }) {
       <div style={{flex:1,overflowY:'auto'}}>
         {drinks.length===0&&<div style={S.empty}>등록된 음료가 없습니다</div>}
         {drinks.map(d=>(
-          <button key={d.id} onClick={()=>onSelect(d)} style={{width:'100%',background:'none',border:'none',borderBottom:'1px solid #f5f5f5',display:'flex',alignItems:'center',padding:'14px 16px',cursor:'pointer',gap:14,textAlign:'left'}}>
+          <button key={d.id} onClick={()=>onSelect(d)} style={{width:'100%',background:'none',border:'none',borderBottom:'1px solid #f5f5f5',display:'flex',alignItems:'center',padding:'14px 16px',cursor:'pointer',gap:14,textAlign:'left',color:'#111'}}>
             <img src={d.image} alt={d.name} style={{width:80,height:80,borderRadius:50,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} onError={e=>{e.target.src="https://via.placeholder.com/80x80?text=☕";}} />
             <div style={{flex:1}}>
               <div style={{display:'flex',gap:4,marginBottom:4}}>{d.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:'#fff3e0',color:'#e65100'}}>{t}</span>)}</div>
@@ -320,7 +327,7 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
   return (
     <div style={{...S.screen,overflowY:'auto',paddingBottom:90}}>
       <div style={{height:240,background:'#f8f8f8',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-        <button onClick={onBack} style={{position:'absolute',top:12,left:12,background:'rgba(255,255,255,0.9)',border:'none',borderRadius:50,width:36,height:36,fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>‹</button>
+        <button onClick={onBack} style={{position:'absolute',top:12,left:12,background:'rgba(255,255,255,0.9)',border:'none',borderRadius:50,width:36,height:36,fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#333'}}>‹</button>
         <img src={drink.image} alt={drink.name} style={{width:180,height:180,objectFit:'cover',borderRadius:20}} onError={e=>{e.target.src="https://via.placeholder.com/180x180?text=☕";}} />
       </div>
       <div style={{padding:'16px 20px'}}>
@@ -427,7 +434,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, onCancel, onConfirm }
         <div style={S.fLabel}>배달 날짜</div>
         <div style={{display:'flex',gap:10,marginBottom:14}}>
           {dates.map(d=>(
-            <button key={d.value} onClick={()=>handleDateChange(d)} style={{flex:1,padding:'10px 8px',border:`2px solid ${date.value===d.value?P:'#e0e0e0'}`,borderRadius:12,background:date.value===d.value?'#f0faf4':'#fff',cursor:'pointer',textAlign:'center'}}>
+            <button key={d.value} onClick={()=>handleDateChange(d)} style={{flex:1,padding:'10px 8px',border:`2px solid ${date.value===d.value?P:'#e0e0e0'}`,borderRadius:12,background:date.value===d.value?'#f0faf4':'#fff',cursor:'pointer',textAlign:'center',color:'#111'}}>
               <div style={{fontSize:11,fontWeight:700,color:date.value===d.value?P:'#999',marginBottom:3}}>{d.tag}</div>
               <div style={{fontSize:13,fontWeight:600,color:date.value===d.value?P:'#444'}}>{d.label}</div>
             </button>
@@ -445,7 +452,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, onCancel, onConfirm }
           <span style={{fontSize:14,color:'#666'}}>합계 금액</span><span style={{fontSize:20,fontWeight:800,color:P}}>{fmt(totalPrice)}</span>
         </div>
         <div style={{display:'flex',gap:10}}>
-          <button onClick={onCancel} style={{flex:1,height:48,borderRadius:24,border:'1.5px solid #ddd',background:'none',fontSize:15,fontWeight:700,cursor:'pointer'}}>취소</button>
+          <button onClick={onCancel} style={{flex:1,height:48,borderRadius:24,border:'1.5px solid #ddd',background:'#f5f5f5',fontSize:15,fontWeight:700,cursor:'pointer',color:'#333'}}>취소</button>
           <button onClick={submit} disabled={loading||!canOrder} style={{flex:2,height:48,borderRadius:24,border:'none',background:(loading||!canOrder)?'#bbb':P,color:'#fff',fontSize:15,fontWeight:700,cursor:(loading||!canOrder)?'default':'pointer'}}>{loading?"처리 중...":"주문 완료"}</button>
         </div>
       </div>
@@ -499,7 +506,7 @@ function HistoryScreen({ userName, onBack }) {
           const mo=byMonth[mk],mTotal=mo.reduce((s,o)=>s+o.totalPrice,0),isOpen=!!open[mk];
           return (
             <div key={mk} style={{margin:'0 16px 12px',border:'1px solid #f0f0f0',borderRadius:14,overflow:'hidden'}}>
-              <button onClick={()=>setOpen(p=>({...p,[mk]:!p[mk]}))} style={{width:'100%',padding:'14px 16px',background:isOpen?'#f0faf4':'#fafafa',border:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}>
+              <button onClick={()=>setOpen(p=>({...p,[mk]:!p[mk]}))} style={{width:'100%',padding:'14px 16px',background:isOpen?'#f0faf4':'#fafafa',border:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',color:'#111'}}>
                 <div style={{textAlign:'left'}}><div style={{fontSize:15,fontWeight:700}}>{fmtMonth(mk)}</div><div style={{fontSize:12,color:'#888',marginTop:2}}>{mo.length}건 · {fmt(mTotal)}</div></div>
                 <span style={{color:'#555',fontSize:18}}>{isOpen?'∧':'∨'}</span>
               </button>
@@ -516,7 +523,7 @@ function OrderCard({ order, compact }) {
   const dt=order.orderTime?new Date(order.orderTime).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
   return (
     <div style={{borderBottom:compact?'1px solid #f5f5f5':'none',margin:compact?0:'0 16px 10px',border:compact?'none':'1px solid #f0f0f0',borderRadius:compact?0:14,overflow:'hidden'}}>
-      <button onClick={()=>setExp(p=>!p)} style={{width:'100%',padding:'12px 16px',background:'none',border:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',textAlign:'left'}}>
+      <button onClick={()=>setExp(p=>!p)} style={{width:'100%',padding:'12px 16px',background:'none',border:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',textAlign:'left',color:'#111'}}>
         <div style={{flex:1}}>
           <div style={{fontSize:14,fontWeight:700}}>{order.deliveryLabel} {order.deliveryTime}</div>
           <div style={{fontSize:12,color:'#888',marginTop:2}}>{order.location} · {order.items?.length||0}종 · <span style={{color:P,fontWeight:600}}>{fmt(order.totalPrice)}</span></div>
@@ -601,7 +608,7 @@ function CategoriesTab({ cats, onToggle, onUpdate }) {
               </div>
               <div style={{display:'flex',gap:8}}>
                 <button onClick={()=>{onUpdate(cat.id,ef);setEditing(null);}} style={{flex:1,height:38,borderRadius:19,border:'none',background:P,color:'#fff',fontWeight:700,cursor:'pointer',fontSize:13}}>저장</button>
-                <button onClick={()=>setEditing(null)} style={{flex:1,height:38,borderRadius:19,border:'1px solid #ddd',background:'#fff',cursor:'pointer',fontSize:13}}>취소</button>
+                <button onClick={()=>setEditing(null)} style={{flex:1,height:38,borderRadius:19,border:'1px solid #ddd',background:'#f5f5f5',cursor:'pointer',fontSize:13,color:'#333'}}>취소</button>
               </div>
             </div>
           ):(
@@ -646,7 +653,7 @@ function AdminOrdersTab() {
     const isOpen=!!open[groupKey];
     return (
       <div style={{margin:'0 16px 10px',border:'1px solid #f0f0f0',borderRadius:14,overflow:'hidden'}}>
-        <button onClick={()=>toggle(groupKey)} style={{width:'100%',padding:'12px 16px',background:isOpen?'#f0faf4':'#fafafa',border:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}>
+        <button onClick={()=>toggle(groupKey)} style={{width:'100%',padding:'12px 16px',background:isOpen?'#f0faf4':'#fafafa',border:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',color:'#111'}}>
           <div style={{textAlign:'left'}}>
             <div style={{fontSize:14,fontWeight:700,color:'#111'}}>{label}</div>
             <div style={{fontSize:12,color:'#888',marginTop:2}}>{sub} · {grpOrders.length}건 · <span style={{color:P,fontWeight:700}}>{fmt(total)}</span></div>
@@ -899,7 +906,7 @@ function PwChangeSection({ currentPw, onSave }) {
       <input type="password" value={nw} onChange={e=>setNw(e.target.value)} placeholder="새 비밀번호 (4자 이상)" style={S.input} />
       <input type="password" value={nw2} onChange={e=>setNw2(e.target.value)} placeholder="새 비밀번호 확인" style={{...S.input,marginBottom:10}} onKeyDown={e=>e.key==='Enter'&&submit()} />
       {msg&&<div style={{fontSize:13,color:msg.ok?'#2e7d32':'#e53935',marginBottom:8}}>{msg.text}</div>}
-      <button onClick={submit} style={{width:'100%',height:42,borderRadius:21,border:'none',background:'#333',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>비밀번호 변경</button>
+      <button onClick={submit} style={{width:'100%',height:42,borderRadius:21,border:'none',background:'#444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>비밀번호 변경</button>
     </div>
   );
 }
@@ -967,11 +974,11 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
 // ─── BOTTOM NAV ───────────────────────────────────────────────
 function BottomNav({ screen, setScreen, cartCount }) {
   return (
-    <div style={{display:'flex',borderTop:'1px solid #f0f0f0',background:'#fff',flexShrink:0}}>
+    <div style={{display:'flex',borderTop:'1px solid #f0f0f0',background:'#fff',flexShrink:0,paddingBottom:'env(safe-area-inset-bottom, 6px)'}}>
       {[{id:"home",icon:"🏠",label:"Home"},{id:"cart",icon:"🛒",label:"Cart"},{id:"list",icon:"☕",label:"Order"}].map(t=>{
         const active=screen===t.id||(t.id==='list'&&screen==='detail');
         return (
-          <button key={t.id} onClick={()=>setScreen(t.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0 14px',background:'none',border:'none',cursor:'pointer'}}>
+          <button key={t.id} onClick={()=>setScreen(t.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0 14px',background:'none',border:'none',cursor:'pointer',color:'#111'}}>
             <div style={{position:'relative',fontSize:22,lineHeight:1.2}}>{t.icon}{t.id==='cart'&&cartCount>0&&<span style={S.badge}>{cartCount}</span>}</div>
             <span style={{fontSize:10,color:'#111',fontWeight:active?800:500,marginTop:2}}>{t.label}</span>
             {active&&<div style={{width:4,height:4,borderRadius:'50%',background:P,marginTop:2}} />}
@@ -984,14 +991,14 @@ function BottomNav({ screen, setScreen, cartCount }) {
 
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
-  shell:{width:'100vw',height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#e8f5e9,#c8e6c9)',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
-  phone:{width:390,height:844,background:'#fff',borderRadius:40,boxShadow:'0 30px 80px rgba(0,0,0,0.25)',overflow:'hidden',display:'flex',flexDirection:'column',position:'relative'},
+  shell:{width:'100vw',height:'100vh',display:'flex',flexDirection:'column',background:'#fff',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",overflow:'hidden'},
+  phone:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',color:'#111'},
   statusBar:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 24px 6px',fontSize:13,fontWeight:600,flexShrink:0},
   screen:{flex:1,display:'flex',flexDirection:'column',overflowY:'auto',overflowX:'hidden'},
   navBar:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 16px',borderBottom:'1px solid #f0f0f0',flexShrink:0},
   backBtn:{background:'none',border:'none',fontSize:28,cursor:'pointer',color:'#333',width:36,display:'flex',alignItems:'center'},
   navTitle:{fontSize:17,fontWeight:700,color:'#111'},
-  iconBtn:{background:'none',border:'1px solid #e8e8e8',borderRadius:20,padding:'4px 10px',fontSize:18,cursor:'pointer'},
+  iconBtn:{background:'#fff',border:'1px solid #e8e8e8',borderRadius:20,padding:'4px 10px',fontSize:18,cursor:'pointer',color:'#333'},
   badge:{position:'absolute',top:-6,right:-6,background:'#ff4444',color:'#fff',borderRadius:10,fontSize:10,fontWeight:700,padding:'1px 5px',minWidth:16,textAlign:'center'},
   qtyBtn:{width:36,height:36,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#333'},
   overlay:{position:'absolute',inset:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100},
