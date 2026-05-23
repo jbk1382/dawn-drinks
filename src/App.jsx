@@ -183,7 +183,6 @@ export default function App() {
   return (
     <div style={S.shell}>
       <div style={S.phone}>
-        <div style={S.statusBar}><span style={{fontWeight:700}}>9:41</span><span>📶 🔋</span></div>
         {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>!selCat||d.categoryId===selCat.id)} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
@@ -219,11 +218,7 @@ function AdminLoginModal({ correctPassword, onSuccess, onCancel }) {
         <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} onKeyDown={e=>e.key==='Enter'&&submit()} placeholder="비밀번호 입력" autoFocus style={{...S.mInput,textAlign:'center',letterSpacing:4}} />
         {err&&<div style={{color:'#e53935',fontSize:13,marginBottom:10,textAlign:'center'}}>⚠️ {err}</div>}
         <div style={{display:'flex',gap:10}}>
-<<<<<<< HEAD
           <button onClick={onCancel} style={{flex:1,height:46,borderRadius:23,border:'1.5px solid #ddd',background:'#f5f5f5',fontSize:15,fontWeight:700,cursor:'pointer',color:'#333'}}>취소</button>
-=======
-          <button onClick={onCancel} style={{flex:1,height:46,borderRadius:23,border:'1.5px solid #ddd',background:'none',fontSize:15,fontWeight:700,cursor:'pointer'}}>취소</button>
->>>>>>> e37a60d2f7bed01aa360b60193226ac51ee4d75f
           <button onClick={submit} style={{flex:1,height:46,borderRadius:23,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>확인</button>
         </div>
       </div>
@@ -911,11 +906,7 @@ function PwChangeSection({ currentPw, onSave }) {
       <input type="password" value={nw} onChange={e=>setNw(e.target.value)} placeholder="새 비밀번호 (4자 이상)" style={S.input} />
       <input type="password" value={nw2} onChange={e=>setNw2(e.target.value)} placeholder="새 비밀번호 확인" style={{...S.input,marginBottom:10}} onKeyDown={e=>e.key==='Enter'&&submit()} />
       {msg&&<div style={{fontSize:13,color:msg.ok?'#2e7d32':'#e53935',marginBottom:8}}>{msg.text}</div>}
-<<<<<<< HEAD
       <button onClick={submit} style={{width:'100%',height:42,borderRadius:21,border:'none',background:'#444',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>비밀번호 변경</button>
-=======
-      <button onClick={submit} style={{width:'100%',height:42,borderRadius:21,border:'none',background:'#333',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>비밀번호 변경</button>
->>>>>>> e37a60d2f7bed01aa360b60193226ac51ee4d75f
     </div>
   );
 }
@@ -983,7 +974,7 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
 // ─── BOTTOM NAV ───────────────────────────────────────────────
 function BottomNav({ screen, setScreen, cartCount }) {
   return (
-    <div style={{display:'flex',borderTop:'1px solid #f0f0f0',background:'#fff',flexShrink:0}}>
+    <div style={{display:'flex',borderTop:'1px solid #f0f0f0',background:'#fff',flexShrink:0,paddingBottom:'env(safe-area-inset-bottom, 6px)'}}>
       {[{id:"home",icon:"🏠",label:"Home"},{id:"cart",icon:"🛒",label:"Cart"},{id:"list",icon:"☕",label:"Order"}].map(t=>{
         const active=screen===t.id||(t.id==='list'&&screen==='detail');
         return (
@@ -1000,8 +991,8 @@ function BottomNav({ screen, setScreen, cartCount }) {
 
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
-  shell:{width:'100vw',height:'100vh',display:'flex',alignItems:'flex-start',justifyContent:'center',background:'linear-gradient(135deg,#e8f5e9,#c8e6c9)',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",overflowY:'auto',paddingTop:'8px',boxSizing:'border-box'},
-  phone:{width:390,height:844,background:'#fff',borderRadius:40,boxShadow:'0 30px 80px rgba(0,0,0,0.25)',overflow:'hidden',display:'flex',flexDirection:'column',position:'relative',color:'#111',flexShrink:0},
+  shell:{width:'100vw',height:'100vh',display:'flex',flexDirection:'column',background:'#fff',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",overflow:'hidden'},
+  phone:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',color:'#111'},
   statusBar:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 24px 6px',fontSize:13,fontWeight:600,flexShrink:0},
   screen:{flex:1,display:'flex',flexDirection:'column',overflowY:'auto',overflowX:'hidden'},
   navBar:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 16px',borderBottom:'1px solid #f0f0f0',flexShrink:0},
