@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { db } from './firebase';
+import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
 const P = "#1a7a4a";
 const fmt = (n) => n.toLocaleString("ko-KR") + "원";
@@ -126,12 +128,8 @@ export default function App() {
   const [selCat, setSelCat] = useState(null);
   const [selDrink, setSelDrink] = useState(null);
   const [cart, setCart] = useState([]);
-  const [drinks, setDrinks] = useState(() => {
-    try { const s = localStorage.getItem('hb_drinks'); return s ? JSON.parse(s) : INIT_DRINKS; } catch { return INIT_DRINKS; }
-  });
-  const [cats, setCats] = useState(() => {
-    try { const s = localStorage.getItem('hb_cats'); return s ? JSON.parse(s) : INIT_CATS; } catch { return INIT_CATS; }
-  });
+  const [drinks, setDrinks] = useState(INIT_DRINKS);
+  const [cats, setCats] = useState(INIT_CATS);
   const [settings, setSettings] = useState(INIT_SETTINGS);
   const [editDrink, setEditDrink] = useState(null);
   const [orderModal, setOrderModal] = useState(false);
@@ -142,7 +140,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    Promise.all([getStoredUser(), getStoredSettings()]).then(([user, stored]) => {
+    Promise.all([getStoredUser(), getStoredSettings(), getStoredDrinks(), getStoredCats()]).then(([user, stored, storedDrinks, storedCats]) => {
       if (user) setUserName(user);
       if (stored) setSettings(() => ({
         ...INIT_SETTINGS, ...stored,
@@ -151,13 +149,15 @@ export default function App() {
         deliveryHours: { ...INIT_DH, ...(stored.deliveryHours||{}) },
         adminPassword: stored.adminPassword || INIT_SETTINGS.adminPassword,
       }));
+      if (storedDrinks) setDrinks(storedDrinks);
+      if (storedCats) setCats(storedCats);
       setBooting(false);
     });
   }, []);
 
-  // 음료·카테고리 변경 시 자동 저장
-  useEffect(() => { try { localStorage.setItem('hb_drinks', JSON.stringify(drinks)); } catch {} }, [drinks]);
-  useEffect(() => { try { localStorage.setItem('hb_cats', JSON.stringify(cats)); } catch {} }, [cats]);
+  // 음료·카테고리 변경 시 Firestore 자동 저장
+  useEffect(() => { if (!booting) saveStoredDrinks(drinks); }, [drinks]);
+  useEffect(() => { if (!booting) saveStoredCats(cats); }, [cats]);
 
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const cartCount = cart.length;
