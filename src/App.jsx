@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { db } from './firebase';
-import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
 const P = "#1a7a4a";
 const fmt = (n) => n.toLocaleString("ko-KR") + "원";
