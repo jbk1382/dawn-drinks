@@ -12,6 +12,10 @@ async function getStoredUser() { return stGet('hb_user'); }
 async function setStoredUser(n) { stSet('hb_user', n); }
 async function getStoredSettings() { try { return JSON.parse(stGet('hb_settings') || 'null'); } catch { return null; } }
 async function saveStoredSettings(s) { stSet('hb_settings', JSON.stringify(s)); }
+async function getStoredDrinks() { try { const s=stGet('hb_drinks'); return s?JSON.parse(s):null; } catch { return null; } }
+async function saveStoredDrinks(d) { try { stSet('hb_drinks', JSON.stringify(d)); } catch {} }
+async function getStoredCats() { try { const s=stGet('hb_cats'); return s?JSON.parse(s):null; } catch { return null; } }
+async function saveStoredCats(c) { try { stSet('hb_cats', JSON.stringify(c)); } catch {} }
 async function getUserOrders(name) { try { return JSON.parse(stGet(`hb_orders:${name}`) || '[]'); } catch { return []; } }
 async function pushOrder(name, order) {
   const prev = await getUserOrders(name);
