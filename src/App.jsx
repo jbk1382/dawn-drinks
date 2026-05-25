@@ -299,11 +299,11 @@ function ListScreen({ category, drinks, onBack, onSelect, cartCount, onCart }) {
   return (
     <div style={S.screen}>
       <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>{category?category.label:"전체 메뉴"}</span><button onClick={onCart} style={{...S.iconBtn,position:'relative'}}>🛒{cartCount>0&&<span style={S.badge}>{cartCount}</span>}</button></div>
-      <div style={{flex:1,overflowY:'auto'}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:0}}>
         {drinks.length===0&&<div style={S.empty}>등록된 음료가 없습니다</div>}
         {drinks.map(d=>(
           <button key={d.id} onClick={()=>onSelect(d)} style={{width:'100%',background:'none',border:'none',borderBottom:'1px solid #f5f5f5',display:'flex',alignItems:'center',padding:'14px 16px',cursor:'pointer',gap:14,textAlign:'left',color:'#111'}}>
-            <img src={d.image} alt={d.name} style={{width:80,height:80,borderRadius:50,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} onError={e=>{e.target.src="https://via.placeholder.com/80x80?text=☕";}} />
+            <DrinkImg src={d.image} alt={d.name} style={{width:80,height:80,borderRadius:50,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} />
             <div style={{flex:1}}>
               <div style={{display:'flex',gap:4,marginBottom:4}}>{d.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:'#fff3e0',color:'#e65100'}}>{t}</span>)}</div>
               <div style={{fontSize:15,fontWeight:700,color:'#111'}}>{d.name}</div>
@@ -325,10 +325,10 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
   const [opts,setOpts]=useState(()=>Object.fromEntries(drink.options.map(o=>[o.id,o.default])));
   const total=(drink.price+selSz.price)*qty;
   return (
-    <div style={{...S.screen,overflowY:'auto',paddingBottom:90}}>
+    <div style={{...S.screen,overflowY:'auto',minHeight:0,paddingBottom:90}}>
       <div style={{height:240,background:'#f8f8f8',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
         <button onClick={onBack} style={{position:'absolute',top:12,left:12,background:'rgba(255,255,255,0.9)',border:'none',borderRadius:50,width:36,height:36,fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#333'}}>‹</button>
-        <img src={drink.image} alt={drink.name} style={{width:180,height:180,objectFit:'cover',borderRadius:20}} onError={e=>{e.target.src="https://via.placeholder.com/180x180?text=☕";}} />
+        <DrinkImg src={drink.image} alt={drink.name} style={{width:180,height:180,objectFit:'cover',borderRadius:20}} />
       </div>
       <div style={{padding:'16px 20px'}}>
         <div style={{display:'flex',gap:4,marginBottom:6}}>{drink.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:'#fff3e0',color:'#e65100'}}>{t}</span>)}</div>
@@ -377,11 +377,11 @@ function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
   return (
     <div style={S.screen}>
       <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>장바구니</span><span style={{width:36}}/></div>
-      <div style={{flex:1,overflowY:'auto',padding:'0 16px'}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
         {cart.length===0&&<div style={S.empty}>장바구니가 비어있습니다 🛒</div>}
         {cart.map(item=>(
           <div key={item.cartId} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid #f5f5f5'}}>
-            <img src={item.drink.image} alt="" style={{width:60,height:60,borderRadius:12,objectFit:'cover',background:'#f5f5f5'}} onError={e=>{e.target.src="https://via.placeholder.com/60x60?text=☕";}} />
+            <DrinkImg src={item.drink.image} alt="" style={{width:60,height:60,borderRadius:12,objectFit:'cover',background:'#f5f5f5'}} />
             <div style={{flex:1}}>
               <div style={{fontWeight:700,fontSize:14}}>{item.drink.name}</div>
               <div style={{fontSize:12,color:'#888',marginTop:2}}>{item.selectedSize.label} · {Object.values(item.optionChoices).join(' · ')}</div>
@@ -499,7 +499,7 @@ function HistoryScreen({ userName, onBack }) {
           <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'12px',border:'none',background:'none',fontSize:13,fontWeight:700,cursor:'pointer',color:'#111',borderBottom:`2px solid ${tab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
         ))}
       </div>
-      <div style={{flex:1,overflowY:'auto',padding:'8px 0'}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'8px 0'}}>
         {orders.length===0&&<div style={S.empty}>아직 주문 내역이 없습니다 📋</div>}
         {tab==='recent'&&orders.slice(0,30).map(o=><OrderCard key={o.id} order={o} />)}
         {tab==='monthly'&&monthKeys.map(mk=>{
@@ -564,7 +564,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
           <button key={t.id} onClick={()=>onTabChange(t.id)} style={{flex:1,padding:'10px 2px',border:'none',background:'none',fontSize:11,fontWeight:700,cursor:'pointer',color:'#111',borderBottom:`2px solid ${activeTab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
         ))}
       </div>
-      <div style={{flex:1,overflowY:'auto'}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:0}}>
         {activeTab==="drinks"     && <DrinksTab drinks={drinks} onEdit={onEdit} onDelete={onDelete} />}
         {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} />}
         {activeTab==="orders"     && <AdminOrdersTab />}
@@ -577,11 +577,11 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
 function DrinksTab({ drinks, onEdit, onDelete }) {
   const [confirm,setConfirm]=useState(null);
   return (
-    <div style={{padding:'0 16px'}}>
+    <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
       {drinks.length===0&&<div style={S.empty}>등록된 음료가 없습니다</div>}
       {drinks.map(d=>(
         <div key={d.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid #f5f5f5'}}>
-          <img src={d.image} alt="" style={{width:60,height:60,borderRadius:12,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} onError={e=>{e.target.src="https://via.placeholder.com/60x60?text=☕";}} />
+          <DrinkImg src={d.image} alt="" style={{width:60,height:60,borderRadius:12,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} />
           <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div><div style={{fontSize:12,color:'#888'}}>{fmt(d.price)} · 옵션 {d.options.length}개</div></div>
           <button onClick={()=>onEdit(d)} style={S.editBtn}>수정</button>
           <button onClick={()=>setConfirm(d.id)} style={S.delBtn}>삭제</button>
@@ -596,7 +596,7 @@ function CategoriesTab({ cats, onToggle, onUpdate }) {
   const [editing,setEditing]=useState(null);
   const [ef,setEf]=useState({label:'',icon:''});
   return (
-    <div style={{padding:16}}>
+    <div style={{flex:1,overflowY:'auto',minHeight:0,padding:16}}>
       <div style={{fontSize:13,color:'#555',lineHeight:1.6,padding:'10px 14px',background:'#f0faf4',borderRadius:12,marginBottom:16,borderLeft:`3px solid ${P}`}}>💡 이름·아이콘 수정 및 노출 여부 설정</div>
       {cats.map(cat=>(
         <div key={cat.id} style={{borderBottom:'1px solid #f5f5f5'}}>
@@ -687,7 +687,7 @@ function AdminOrdersTab() {
   };
 
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+    <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0}}>
       {/* 요약 카드 */}
       <div style={{display:'flex',gap:8,padding:'12px 16px',flexShrink:0}}>
         {[{label:'전체 주문',val:`${orders.length}건`,sub:fmt(totalRevenue)},{label:'이번달',val:`${(byMon[thisMonth]||[]).length}건`,sub:fmt(monthRevenue)},{label:'오늘',val:`${todayCnt}건`,sub:''}].map(c=>(
@@ -704,7 +704,7 @@ function AdminOrdersTab() {
           <button key={t.id} onClick={()=>setSubTab(t.id)} style={{flex:1,padding:'10px 4px',border:'none',background:'none',fontSize:12,fontWeight:700,cursor:'pointer',color:'#111',borderBottom:`2px solid ${subTab===t.id?P:'transparent'}`,marginBottom:-2}}>{t.label}</button>
         ))}
       </div>
-      <div style={{flex:1,overflowY:'auto',paddingTop:8}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:0,paddingTop:8}}>
         {orders.length===0&&<div style={S.empty}>주문 내역이 없습니다</div>}
         {subTab==='daily'&&dateKeys.map(k=>(
           <GroupRow key={k} groupKey={`d_${k}`} label={fmtDate(k)} sub={`${byDate[k].length}건`} orders={byDate[k]} />
@@ -721,33 +721,68 @@ function AdminOrdersTab() {
 }
 
 // ─── SETTINGS TAB ─────────────────────────────────────────────
-const PRESET_EMOJIS = ['🏫','🎓','🏛️','📚','🌟','🏆','🎒','🌈','🎪','🎨','☕','🥤','🍹','🧃','🍵','🧋','🍶','🥛','🍺','🧉','❤️','💚','💙','⭐','✨','🔥','🌸','🌺'];
+const ICON_SECTIONS = [
+  { label:'☕ 커피/에스프레소', icons:['☕','🫖','🧋','🤎','🫘','⚗️','🫙','🥐','🧇','🫗','🍵','🫧'] },
+  { label:'🥤 탄산/청량음료',   icons:['🥤','🧃','💧','🫧','🧊','❄️','🌊','🫙','🍶','🧉','🥃','🍺'] },
+  { label:'🍹 특별/칵테일',     icons:['🍹','🍸','🥂','🍷','🍾','🫗','🍻','🍱','🥤','🎯','🌀','🎪'] },
+  { label:'🥛 밀크/유제품',     icons:['🥛','🍦','🍧','🍨','🧈','🫙','🍮','🥮','🧁','🎂','🍰','🍩'] },
+  { label:'🍓 딸기/베리류',     icons:['🍓','🫐','🍒','🍑','🍇','🍈','🫒','🍎','🍏','🍐','🍊','🍋'] },
+  { label:'🥭 트로피컬/열대',   icons:['🥭','🍍','🥥','🍌','🍉','🥝','🫛','🌴','🌺','🌸','🌼','🌻'] },
+  { label:'🌿 티/허브/건강',    icons:['🌿','🍃','🌱','🌾','🍀','🌲','🌵','🌴','🎋','🎍','🍁','🍂'] },
+  { label:'🍫 디저트/간식',     icons:['🍫','🍬','🍭','🍩','🍪','🧁','🎂','🍰','🍮','🍯','🥧','🍡'] },
+  { label:'✨ 이벤트/특별',     icons:['⭐','🌟','✨','🔥','❄️','🌈','🎉','🎊','🏆','🥇','💎','🎁'] },
+  { label:'💚 색상/테마',       icons:['💚','💛','🩷','💙','🩵','❤️','🧡','💜','🤍','🩶','🤎','🖤'] },
+  { label:'🏫 학교/교육',       icons:['🏫','📚','✏️','🎒','🎓','📝','🔖','📌','🎯','🏅','🌏','🙌'] },
+  { label:'🎨 기타/재미',       icons:['🎨','🎭','🎪','🎠','🎡','🎢','🎯','🎲','🎮','🕹️','🎸','🎵'] },
+];
 
-function EmojiPicker({ value, onChange }) {
+function IconPicker({ value, onChange, placeholder='🥤', small=false }) {
   const [open,setOpen]=useState(false);
+  const btnSize = small ? {width:48,height:44,fontSize:22} : {width:56,height:52,fontSize:26};
   return (
     <div style={{position:'relative'}}>
-      <button onClick={()=>setOpen(p=>!p)} style={{width:56,height:52,fontSize:26,border:'2px solid #e0e0e0',borderRadius:12,background:'#f8f8f8',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
-        {value||'🏫'}
+      <button onClick={()=>setOpen(p=>!p)} style={{...btnSize,border:'2px solid #e0e0e0',borderRadius:12,background:'#f8f8f8',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        {value?.startsWith('emoji:')?value.replace('emoji:',''):value||placeholder}
       </button>
       {open&&(
-        <div style={{position:'absolute',top:60,left:0,background:'#fff',border:'1px solid #e0e0e0',borderRadius:16,padding:12,zIndex:200,boxShadow:'0 8px 30px rgba(0,0,0,0.15)',width:240}}>
-          <div style={{fontSize:11,color:'#888',marginBottom:8,fontWeight:600}}>아이콘 선택</div>
-          <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
-            {PRESET_EMOJIS.map(e=>(
-              <button key={e} onClick={()=>{onChange(e);setOpen(false);}} style={{width:36,height:36,fontSize:20,border:`2px solid ${value===e?P:'transparent'}`,borderRadius:8,background:value===e?'#f0faf4':'none',cursor:'pointer'}}>
-                {e}
-              </button>
-            ))}
+        <div style={{position:'absolute',top:60,left:0,background:'#fff',border:'1px solid #e0e0e0',borderRadius:16,padding:14,zIndex:300,boxShadow:'0 8px 40px rgba(0,0,0,0.18)',width:320,maxHeight:420,overflowY:'auto'}}>
+          <div style={{fontSize:12,fontWeight:700,color:P,marginBottom:10}}>아이콘 선택</div>
+          {ICON_SECTIONS.map(sec=>(
+            <div key={sec.label} style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#888',marginBottom:6,paddingBottom:4,borderBottom:'1px solid #f0f0f0'}}>{sec.label}</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+                {sec.icons.map(ic=>(
+                  <button key={ic} onClick={()=>{onChange(ic);setOpen(false);}} style={{width:34,height:34,fontSize:19,border:`2px solid ${value===ic?P:'transparent'}`,borderRadius:8,background:value===ic?'#f0faf4':'none',cursor:'pointer'}}>
+                    {ic}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{borderTop:'1px solid #f0f0f0',paddingTop:10,marginTop:4}}>
+            <div style={{fontSize:11,fontWeight:700,color:'#888',marginBottom:4}}>직접 입력</div>
+            <input value={value?.startsWith('emoji:')?value.replace('emoji:',''):value||''} onChange={e=>onChange(e.target.value)} placeholder="이모지 직접 입력" style={{...S.input,marginBottom:0,fontSize:18,textAlign:'center'}} />
           </div>
-          <div style={{borderTop:'1px solid #f0f0f0',paddingTop:8,marginTop:8}}>
-            <div style={{fontSize:11,color:'#888',marginBottom:4}}>직접 입력</div>
-            <input value={value} onChange={e=>onChange(e.target.value)} placeholder="이모지 또는 텍스트" style={{...S.input,marginBottom:0,fontSize:18,textAlign:'center'}} />
-          </div>
+          <button onClick={()=>setOpen(false)} style={{width:'100%',marginTop:8,padding:'8px',border:'none',borderRadius:10,background:'#f5f5f5',cursor:'pointer',fontSize:13,fontWeight:600,color:'#555'}}>닫기 ✕</button>
         </div>
       )}
     </div>
   );
+}
+
+// 음료 이미지/아이콘 렌더러
+function DrinkImg({ src, alt, style }) {
+  if (!src || src === '') return <div style={{...style,display:'flex',alignItems:'center',justifyContent:'center',background:'#f0faf4',fontSize:28}}>🥤</div>;
+  if (src.startsWith('emoji:')) {
+    const em = src.replace('emoji:','');
+    return <div style={{...style,display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#f0faf4,#e8f5e9)',fontSize:Math.floor((parseInt(style.width)||60)*0.55)}}>{em}</div>;
+  }
+  return <img src={src} alt={alt||''} style={style} onError={e=>{e.target.onerror=null;e.target.parentNode.innerHTML=`<div style="width:${style.width}px;height:${style.height}px;display:flex;align-items:center;justify-content:center;background:#f0faf4;border-radius:${style.borderRadius||0}px;font-size:28px">🥤</div>`;}} />;
+}
+
+// 카테고리용 EmojiPicker (기존 호환)
+function EmojiPicker({ value, onChange }) {
+  return <IconPicker value={value} onChange={onChange} placeholder='🏫' />;
 }
 
 function SettingsTab({ settings, onSave }) {
@@ -770,7 +805,7 @@ function SettingsTab({ settings, onSave }) {
   const imgFileRef=useRef();
 
   return (
-    <div style={{padding:16}}>
+    <div style={{flex:1,overflowY:'auto',minHeight:0,padding:16}}>
 
       {/* 학교 정보 */}
       <SH>🏫 학교 정보</SH>
@@ -927,13 +962,39 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
   return (
     <div style={{...S.screen,overflowY:'auto'}}>
       <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>{drink?'음료 수정':'음료 추가'}</span><button onClick={handleSave} style={S.newBtn}>저장</button></div>
-      <div style={{padding:'0 16px 100px'}}>
-        <div style={{padding:'12px 0 8px',fontSize:15,fontWeight:700}}>음료 이미지</div>
-        <div style={{width:'100%',height:130,border:'2px dashed #ddd',borderRadius:14,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',overflow:'hidden',marginBottom:10}} onClick={()=>imgRef.current.click()}>
-          {form.image?<img src={form.image} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}} />:<div style={{textAlign:'center',color:'#aaa'}}><div style={{fontSize:32}}>📷</div><div style={{fontSize:12}}>클릭하여 선택</div></div>}
+      <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px 80px'}}>
+        <div style={{padding:'12px 0 8px',fontSize:15,fontWeight:700}}>음료 이미지/아이콘</div>
+        {/* 탭 선택 */}
+        <div style={{display:'flex',gap:6,marginBottom:10}}>
+          {[{id:'url',label:'🔗 URL'},     {id:'file',label:'📷 파일'},  {id:'icon',label:'🎨 아이콘'}].map(t=>(
+            <button key={t.id} onClick={()=>upd('imgMode',t.id)}
+              style={{flex:1,padding:'7px 4px',border:`1.5px solid ${(form.imgMode||'url')===t.id?P:'#ddd'}`,borderRadius:10,background:(form.imgMode||'url')===t.id?'#f0faf4':'#fff',fontSize:12,fontWeight:700,color:(form.imgMode||'url')===t.id?P:'#666',cursor:'pointer'}}>
+              {t.label}
+            </button>
+          ))}
         </div>
-        <input ref={imgRef} type="file" accept="image/*" style={{display:'none'}} onChange={handleImg} />
-        <input placeholder="또는 이미지 URL" value={form.image?.startsWith('data:')?'':(form.image||'')} onChange={e=>upd('image',e.target.value)} style={S.input} />
+        {/* 미리보기 */}
+        <div style={{width:'100%',height:120,border:'2px dashed #ddd',borderRadius:14,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',marginBottom:10,background:'#fafafa'}}>
+          <DrinkImg src={form.image} alt="" style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:12}} />
+        </div>
+        {/* URL 모드 */}
+        {(!form.imgMode||form.imgMode==='url')&&(
+          <input placeholder="이미지 URL 입력 (https://...)" value={form.image?.startsWith('data:')||form.image?.startsWith('emoji:')?'':(form.image||'')} onChange={e=>upd('image',e.target.value)} style={S.input} />
+        )}
+        {/* 파일 모드 */}
+        {form.imgMode==='file'&&(
+          <>
+            <input ref={imgRef} type="file" accept="image/*" style={{display:'none'}} onChange={handleImg} />
+            <button onClick={()=>imgRef.current.click()} style={{width:'100%',padding:10,border:'1.5px dashed #aaa',borderRadius:10,background:'#f8f8f8',fontSize:13,cursor:'pointer',marginBottom:8,color:'#444'}}>📁 이미지 파일 선택</button>
+          </>
+        )}
+        {/* 아이콘 모드 */}
+        {form.imgMode==='icon'&&(
+          <div style={{background:'#f0faf4',borderRadius:14,padding:12,marginBottom:8}}>
+            <div style={{fontSize:12,color:'#666',marginBottom:8}}>아이콘을 선택하면 음료 이미지로 사용됩니다</div>
+            <IconPicker value={form.image?.startsWith('emoji:')?form.image.replace('emoji:',''):''} onChange={v=>upd('image',`emoji:${v}`)} placeholder='🥤' />
+          </div>
+        )}
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>기본 정보</div>
         <input placeholder="음료 이름 (한국어) *" value={form.name} onChange={e=>upd('name',e.target.value)} style={S.input} />
         <input placeholder="음료 이름 (영어)" value={form.nameEn} onChange={e=>upd('nameEn',e.target.value)} style={S.input} />
@@ -992,9 +1053,9 @@ function BottomNav({ screen, setScreen, cartCount }) {
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
   shell:{width:'100%',minHeight:'100vh',display:'flex',justifyContent:'center',alignItems:'flex-start',background:'#f0f2f5',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
-  phone:{width:'100%',maxWidth:480,minHeight:'100vh',background:'#fff',display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',color:'#111',boxShadow:'0 0 40px rgba(0,0,0,0.12)'},
+  phone:{width:'100%',maxWidth:480,height:'100vh',background:'#fff',display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',color:'#111',boxShadow:'0 0 40px rgba(0,0,0,0.12)'},
   statusBar:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 24px 6px',fontSize:13,fontWeight:600,flexShrink:0},
-  screen:{flex:1,display:'flex',flexDirection:'column',overflowY:'auto',overflowX:'hidden'},
+  screen:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'},
   navBar:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 16px',borderBottom:'1px solid #f0f0f0',flexShrink:0},
   backBtn:{background:'none',border:'none',fontSize:28,cursor:'pointer',color:'#333',width:36,display:'flex',alignItems:'center'},
   navTitle:{fontSize:17,fontWeight:700,color:'#111'},
