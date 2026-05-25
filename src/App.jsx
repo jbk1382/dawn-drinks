@@ -36,12 +36,13 @@ async function getAllOrders() {
 async function sendTelegram(token, chatId, text) {
   if (!token || !chatId) return { ok: false, error: "설정 미완료" };
   try {
-    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
+    const r = await fetch('/api/telegram', {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, chatId, text }),
     });
     const d = await r.json();
-    return { ok: r.ok, error: d.description };
+    return { ok: d.ok, error: d.description };
   } catch (e) { return { ok: false, error: e.message }; }
 }
 async function sendKakao(accessToken, text) {
