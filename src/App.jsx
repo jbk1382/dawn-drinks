@@ -959,6 +959,7 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
   const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
   const handleImg=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>upd('image',ev.target.result); r.readAsDataURL(f); };
   const addOpt=()=>{ if(!newOpt.label||!newOpt.choices)return; const choices=newOpt.choices.split(',').map(c=>c.trim()).filter(Boolean); upd('options',[...form.options,{id:Date.now().toString(),label:newOpt.label,choices,default:choices[0]}]); setNewOpt({label:'',choices:''}); };
+  const moveOpt=(id,dir)=>{ const idx=form.options.findIndex(o=>o.id===id); if(dir==='up'&&idx===0) return; if(dir==='down'&&idx===form.options.length-1) return; const arr=[...form.options]; const ti=dir==='up'?idx-1:idx+1; [arr[idx],arr[ti]]=[arr[ti],arr[idx]]; upd('options',arr); };
   const handleSave=()=>{ if(!form.name.trim()||!form.price){alert('이름과 가격을 입력해주세요');return;} onSave({...form,price:Number(form.price)}); };
   return (
     <div style={{...S.screen,overflowY:'auto'}}>
@@ -1016,8 +1017,13 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
         ))}
         <button onClick={()=>upd('sizes',[...form.sizes,{label:'XL',ml:591,price:1000}])} style={S.addRowBtn}>+ 사이즈 추가</button>
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>퍼스널 옵션</div>
-        {form.options.map(opt=>(
+        {form.options.map((opt,idx)=>(
           <div key={opt.id} style={{background:'#f8f8f8',borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',gap:8}}>
+            {/* 순서 조정 버튼 */}
+            <div style={{display:'flex',flexDirection:'column',gap:3}}>
+              <button onClick={()=>moveOpt(opt.id,'up')} disabled={idx===0} style={{width:26,height:26,border:'1px solid #ddd',borderRadius:6,background:idx===0?'#f5f5f5':'#fff',cursor:idx===0?'default':'pointer',fontSize:12,color:idx===0?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↑</button>
+              <button onClick={()=>moveOpt(opt.id,'down')} disabled={idx===form.options.length-1} style={{width:26,height:26,border:'1px solid #ddd',borderRadius:6,background:idx===form.options.length-1?'#f5f5f5':'#fff',cursor:idx===form.options.length-1?'default':'pointer',fontSize:12,color:idx===form.options.length-1?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↓</button>
+            </div>
             <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{opt.label}</div><div style={{fontSize:12,color:'#888',marginTop:2}}>{opt.choices.join(' / ')}</div></div>
             <button onClick={()=>upd('options',form.options.filter(o=>o.id!==opt.id))} style={{...S.delBtn,padding:'4px 8px'}}>✕</button>
           </div>
