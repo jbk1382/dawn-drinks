@@ -991,8 +991,8 @@ function BottomNav({ screen, setScreen, cartCount }) {
 
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
-  shell:{width:'100vw',minHeight:'100vh',display:'flex',justifyContent:'center',background:'#f0f2f5',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
-  phone:{width:'100%',maxWidth:480,minHeight:'100vh',height:'100vh',background:'#fff',display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',color:'#111',boxShadow:'0 0 30px rgba(0,0,0,0.1)'},
+  shell:{width:'100%',minHeight:'100vh',display:'flex',justifyContent:'center',alignItems:'flex-start',background:'#f0f2f5',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
+  phone:{width:'100%',maxWidth:480,minHeight:'100vh',background:'#fff',display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',color:'#111',boxShadow:'0 0 40px rgba(0,0,0,0.12)'},
   statusBar:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 24px 6px',fontSize:13,fontWeight:600,flexShrink:0},
   screen:{flex:1,display:'flex',flexDirection:'column',overflowY:'auto',overflowX:'hidden'},
   navBar:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 16px',borderBottom:'1px solid #f0f0f0',flexShrink:0},
