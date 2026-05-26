@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { db } from './firebase';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
-// P is now dynamic per component
+let P = "#1a7a4a"; // 전역 테마 색상 (App에서 매 렌더마다 업데이트)
 const THEME_PRESETS = [
   {id:'green',   name:'에메랄드 🌿', P:'#1a7a4a', light:'#f0faf4', grad:'#2ea76a'},
   {id:'blue',    name:'오션 🌊',     P:'#1565c0', light:'#e3f2fd', grad:'#1976d2'},
@@ -211,7 +211,7 @@ export default function App() {
   useEffect(() => { if (!booting) saveStoredCats(cats); }, [cats]);
 
   const thm = getTheme(settings);
-  const P = thm.P;
+  P = thm.P; // 전역 P 업데이트
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const cartCount = cart.length;
   const cartTotal = cart.reduce((s,i) => s+i.totalPrice, 0);
