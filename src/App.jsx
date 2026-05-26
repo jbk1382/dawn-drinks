@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { db } from './firebase';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
-let P = "#1a7a4a"; // 전역 테마 색상 (App에서 매 렌더마다 업데이트)
+let P = "#1a7a4a";
+let PLIGHT = "#f0faf4";
+let PGRAD = "#2ea76a"; // 전역 테마 색상들
 const THEME_PRESETS = [
   {id:'green',   name:'에메랄드 🌿', P:'#1a7a4a', light:'#f0faf4', grad:'#2ea76a'},
   {id:'blue',    name:'오션 🌊',     P:'#1565c0', light:'#e3f2fd', grad:'#1976d2'},
@@ -211,7 +213,7 @@ export default function App() {
   useEffect(() => { if (!booting) saveStoredCats(cats); }, [cats]);
 
   const thm = getTheme(settings);
-  P = thm.P; // 전역 P 업데이트
+  P = thm.P; PLIGHT = thm.light; PGRAD = thm.grad; // 전역 테마 업데이트
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const cartCount = cart.length;
   const cartTotal = cart.reduce((s,i) => s+i.totalPrice, 0);
@@ -316,7 +318,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
       </div>
 
       {/* 배너 */}
-      <div style={{margin:'10px 16px',borderRadius:18,background:`linear-gradient(135deg,${P},${getTheme(settings||{}).grad})`,overflow:'hidden',position:'relative',minHeight:110,flexShrink:0}}>
+      <div style={{margin:'10px 16px',borderRadius:18,background:`linear-gradient(135deg,${P},${PGRAD})`,overflow:'hidden',position:'relative',minHeight:110,flexShrink:0}}>
         {bannerImg && <img src={bannerImg} alt="" onError={e=>e.target.style.display='none'} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} />}
         <div style={{padding:'18px 22px',color:'#fff',position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
           <div style={{flex:1}}>
@@ -341,7 +343,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
             <div style={{fontSize:12,fontWeight:600,color:'#333'}}>{cat.label}</div>
           </button>
         ))}
-        <button onClick={()=>onSelect(null)} style={{background:`linear-gradient(135deg,${P},${getTheme(settings||{}).grad})`,border:'none',borderRadius:14,padding:'14px 4px',display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
+        <button onClick={()=>onSelect(null)} style={{background:`linear-gradient(135deg,${P},${PGRAD})`,border:'none',borderRadius:14,padding:'14px 4px',display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
           <div style={{fontSize:30,marginBottom:5}}>📋</div>
           <div style={{fontSize:12,fontWeight:600,color:'#fff'}}>전체</div>
         </button>
@@ -519,7 +521,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, onCancel, onConfirm }
 // ─── ORDER SUCCESS ────────────────────────────────────────────
 function OrderSuccessScreen({ order, onDone }) {
   return (
-    <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:`linear-gradient(160deg,${P} 0%,#2ea76a 100%)`,padding:'32px 24px'}}>
+    <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:`linear-gradient(160deg,${P} 0%,${PGRAD} 100%)`,padding:'32px 24px'}}>
       <div style={{fontSize:72}}>🎉</div>
       <div style={{fontSize:30,fontWeight:800,color:'#fff',marginTop:12}}>주문 완료!</div>
       <div style={{fontSize:14,color:'rgba(255,255,255,0.8)',marginTop:6,marginBottom:24}}>주문이 성공적으로 접수되었습니다</div>
@@ -876,7 +878,7 @@ function EmojiPicker({ value, onChange }) {
   return <IconPicker value={value} onChange={onChange} placeholder='🏫' />;
 }
 
-function SettingsTab({ settings, onSave, thm }) {
+function SettingsTab({ settings, onSave }) {
   const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green'});
   const [saved,setSaved]=useState(false);
   const [testing,setTesting]=useState(null);
@@ -945,7 +947,7 @@ function SettingsTab({ settings, onSave, thm }) {
         </div>
         <input value={form.banner?.image?.startsWith('data:')?'':(form.banner?.image||'')} onChange={e=>upBanner('image',e.target.value)} placeholder="또는 이미지 URL 입력" style={{...S.input,marginTop:8}} />
         {/* 미리보기 */}
-        <div style={{marginTop:10,borderRadius:12,background:`linear-gradient(135deg,${P},${getTheme(settings||{}).grad})`,padding:'12px 16px',color:'#fff',overflow:'hidden',position:'relative',minHeight:60}}>
+        <div style={{marginTop:10,borderRadius:12,background:`linear-gradient(135deg,${P},${PGRAD})`,padding:'12px 16px',color:'#fff',overflow:'hidden',position:'relative',minHeight:60}}>
           {form.banner?.image&&<img src={form.banner.image} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} onError={e=>e.target.style.display='none'} />}
           <div style={{position:'relative',zIndex:1}}>
             <div style={{fontSize:10,opacity:0.8,marginBottom:2}}>음료 주문 서비스</div>
