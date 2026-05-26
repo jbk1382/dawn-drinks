@@ -2,7 +2,33 @@ import { useState, useEffect, useRef } from "react";
 import { db } from './firebase';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
-const P = "#1a7a4a";
+// P is now dynamic per component
+const THEME_PRESETS = [
+  {id:'green',   name:'에메랄드 🌿', P:'#1a7a4a', light:'#f0faf4', grad:'#2ea76a'},
+  {id:'blue',    name:'오션 🌊',     P:'#1565c0', light:'#e3f2fd', grad:'#1976d2'},
+  {id:'pink',    name:'블로썸 🌸',   P:'#c2185b', light:'#fce4ec', grad:'#e91e8c'},
+  {id:'orange',  name:'선셋 🌅',     P:'#e65100', light:'#fff3e0', grad:'#fb8c00'},
+  {id:'purple',  name:'라벤더 💜',   P:'#6a1b9a', light:'#f3e5f5', grad:'#8e24aa'},
+  {id:'teal',    name:'민트 🫧',     P:'#00695c', light:'#e0f2f1', grad:'#00897b'},
+  {id:'red',     name:'로즈 🌹',     P:'#b71c1c', light:'#ffebee', grad:'#c62828'},
+  {id:'brown',   name:'초콜릿 🍫',   P:'#4e342e', light:'#efebe9', grad:'#6d4c41'},
+  {id:'indigo',  name:'인디고 ✨',   P:'#283593', light:'#e8eaf6', grad:'#3949ab'},
+  {id:'gold',    name:'골드 ⭐',     P:'#f57f17', light:'#fffde7', grad:'#fbc02d'},
+  {id:'darkgreen',name:'포레스트 🌲', P:'#1b5e20', light:'#e8f5e9', grad:'#2e7d32'},
+  {id:'navy',    name:'네이비 ⚓',   P:'#0d47a1', light:'#e3f2fd', grad:'#1565c0'},
+];
+const FONT_OPTIONS = [
+  {id:'noto',   name:'기본체',     value:"'Noto Sans KR',sans-serif"},
+  {id:'gothic', name:'나눔고딕',   value:"'Nanum Gothic',sans-serif"},
+  {id:'myeong', name:'나눔명조',   value:"'Nanum Myeongjo',serif"},
+  {id:'black',  name:'검은고딕',   value:"'Black Han Sans',sans-serif"},
+  {id:'jua',    name:'주아체',     value:"'Jua',sans-serif"},
+  {id:'gaegu',  name:'개구체',     value:"'Gaegu',cursive"},
+];
+// P is set dynamically per component via getTheme()
+function getTheme(settings) {
+  return THEME_PRESETS.find(t=>t.id===(settings?.themeId||'green')) || THEME_PRESETS[0];
+}
 const fmt = (n) => n.toLocaleString("ko-KR") + "원";
 const WDAY = ['일','월','화','수','목','금','토'];
 const WDAY_FULL = ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
@@ -131,7 +157,8 @@ const INIT_DRINKS = [
 ];
 const INIT_DH = {0:{enabled:false,start:"10:30",end:"14:30"},1:{enabled:true,start:"10:30",end:"14:30"},2:{enabled:true,start:"10:30",end:"14:30"},3:{enabled:true,start:"10:30",end:"14:30"},4:{enabled:true,start:"10:30",end:"14:30"},5:{enabled:true,start:"10:30",end:"14:30"},6:{enabled:false,start:"10:30",end:"14:30"}};
 const INIT_SETTINGS = {
-  school: { name: "다운고등학교", icon: "🏫" },
+  school: { name: "다운고등학교", icon: "🏫", nameColor: '', fontId: 'noto' },
+  themeId: 'green',
   banner: { headline: "음료를 주문하세요 🍹", subtext: "매일 신선하게 준비됩니다", image: "" },
   telegram: { enabled: false, token: "", chatId: "" },
   kakao: { enabled: false, accessToken: "" },
@@ -159,25 +186,32 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    Promise.all([getStoredUser(), getStoredSettings(), getStoredDrinks(), getStoredCats()]).then(([user, stored, storedDrinks, storedCats]) => {
-      if (user) setUserName(user);
-      if (stored) setSettings(() => ({
-        ...INIT_SETTINGS, ...stored,
-        school: { ...INIT_SETTINGS.school, ...(stored.school||{}) },
-        banner: { ...INIT_SETTINGS.banner, ...(stored.banner||{}) },
-        deliveryHours: { ...INIT_DH, ...(stored.deliveryHours||{}) },
-        adminPassword: stored.adminPassword || INIT_SETTINGS.adminPassword,
-      }));
-      if (storedDrinks) setDrinks(storedDrinks);
-      if (storedCats) setCats(storedCats);
-      setBooting(false);
-    });
+    const fallback = setTimeout(() => { console.warn('Firebase timeout'); setBooting(false); }, 6000);
+    Promise.all([getStoredUser(), getStoredSettings(), getStoredDrinks(), getStoredCats()])
+      .then(([user, stored, storedDrinks, storedCats]) => {
+        clearTimeout(fallback);
+        if (user) setUserName(user);
+        if (stored) setSettings(() => ({
+          ...INIT_SETTINGS, ...stored,
+          school: { ...INIT_SETTINGS.school, ...(stored.school||{}) },
+          banner: { ...INIT_SETTINGS.banner, ...(stored.banner||{}) },
+          deliveryHours: { ...INIT_DH, ...(stored.deliveryHours||{}) },
+          adminPassword: stored.adminPassword || INIT_SETTINGS.adminPassword,
+          themeId: stored.themeId || INIT_SETTINGS.themeId,
+        }));
+        if (storedDrinks) setDrinks(storedDrinks);
+        if (storedCats) setCats(storedCats);
+        setBooting(false);
+      })
+      .catch(e => { clearTimeout(fallback); console.error('Boot error:',e); setBooting(false); });
   }, []);
 
   // 음료·카테고리 변경 시 Firestore 자동 저장
   useEffect(() => { if (!booting) saveStoredDrinks(drinks); }, [drinks]);
   useEffect(() => { if (!booting) saveStoredCats(cats); }, [cats]);
 
+  const thm = getTheme(settings);
+  const P = thm.P;
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const cartCount = cart.length;
   const cartTotal = cart.reduce((s,i) => s+i.totalPrice, 0);
@@ -265,12 +299,14 @@ function LoginScreen({ onLogin }) {
 function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, onCart, userName, onHistory }) {
   const icon = school?.icon || '🏫';
   const schoolName = school?.name || '학교 음료 주문';
+  const nameColor = school?.nameColor || P;
+  const fontOpt = FONT_OPTIONS.find(f=>f.id===(school?.fontId||'noto')) || FONT_OPTIONS[0];
   const bannerImg = banner?.image;
   return (
     <div style={S.screen}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 20px 6px'}}>
         <div>
-          <div style={{fontSize:18,fontWeight:800,color:P}}>{icon} {schoolName}</div>
+          <div style={{fontSize:18,fontWeight:800,color:nameColor,fontFamily:fontOpt.value}}>{icon} {schoolName}</div>
           <div style={{fontSize:11,color:'#888'}}>안녕하세요, {userName}님 👋</div>
         </div>
         <div style={{display:'flex',gap:8}}>
@@ -280,7 +316,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
       </div>
 
       {/* 배너 */}
-      <div style={{margin:'10px 16px',borderRadius:18,background:`linear-gradient(135deg,${P},#2ea76a)`,overflow:'hidden',position:'relative',minHeight:110,flexShrink:0}}>
+      <div style={{margin:'10px 16px',borderRadius:18,background:`linear-gradient(135deg,${P},${getTheme(settings||{}).grad})`,overflow:'hidden',position:'relative',minHeight:110,flexShrink:0}}>
         {bannerImg && <img src={bannerImg} alt="" onError={e=>e.target.style.display='none'} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} />}
         <div style={{padding:'18px 22px',color:'#fff',position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
           <div style={{flex:1}}>
@@ -305,7 +341,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
             <div style={{fontSize:12,fontWeight:600,color:'#333'}}>{cat.label}</div>
           </button>
         ))}
-        <button onClick={()=>onSelect(null)} style={{background:`linear-gradient(135deg,${P},#2ea76a)`,border:'none',borderRadius:14,padding:'14px 4px',display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
+        <button onClick={()=>onSelect(null)} style={{background:`linear-gradient(135deg,${P},${getTheme(settings||{}).grad})`,border:'none',borderRadius:14,padding:'14px 4px',display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
           <div style={{fontSize:30,marginBottom:5}}>📋</div>
           <div style={{fontSize:12,fontWeight:600,color:'#fff'}}>전체</div>
         </button>
@@ -776,18 +812,19 @@ function AdminOrdersTab() {
 
 // ─── SETTINGS TAB ─────────────────────────────────────────────
 const ICON_SECTIONS = [
-  { label:'☕ 커피/에스프레소', icons:['☕','🫖','🧋','🤎','🫘','⚗️','🫙','🥐','🧇','🫗','🍵','🫧'] },
-  { label:'🥤 탄산/청량음료',   icons:['🥤','🧃','💧','🫧','🧊','❄️','🌊','🫙','🍶','🧉','🥃','🍺'] },
-  { label:'🍹 특별/칵테일',     icons:['🍹','🍸','🥂','🍷','🍾','🫗','🍻','🍱','🥤','🎯','🌀','🎪'] },
-  { label:'🥛 밀크/유제품',     icons:['🥛','🍦','🍧','🍨','🧈','🫙','🍮','🥮','🧁','🎂','🍰','🍩'] },
-  { label:'🍓 딸기/베리류',     icons:['🍓','🫐','🍒','🍑','🍇','🍈','🫒','🍎','🍏','🍐','🍊','🍋'] },
-  { label:'🥭 트로피컬/열대',   icons:['🥭','🍍','🥥','🍌','🍉','🥝','🫛','🌴','🌺','🌸','🌼','🌻'] },
-  { label:'🌿 티/허브/건강',    icons:['🌿','🍃','🌱','🌾','🍀','🌲','🌵','🌴','🎋','🎍','🍁','🍂'] },
-  { label:'🍫 디저트/간식',     icons:['🍫','🍬','🍭','🍩','🍪','🧁','🎂','🍰','🍮','🍯','🥧','🍡'] },
-  { label:'✨ 이벤트/특별',     icons:['⭐','🌟','✨','🔥','❄️','🌈','🎉','🎊','🏆','🥇','💎','🎁'] },
-  { label:'💚 색상/테마',       icons:['💚','💛','🩷','💙','🩵','❤️','🧡','💜','🤍','🩶','🤎','🖤'] },
-  { label:'🏫 학교/교육',       icons:['🏫','📚','✏️','🎒','🎓','📝','🔖','📌','🎯','🏅','🌏','🙌'] },
-  { label:'🎨 기타/재미',       icons:['🎨','🎭','🎪','🎠','🎡','🎢','🎯','🎲','🎮','🕹️','🎸','🎵'] },
+  { label:'☕ 커피/에스프레소', icons:['☕','🫖','🧋','🤎','🫘','⚗️','🫙','🥐','🧇','🍵','🫧','🧉','🍶','🥃','🫚','🥜','🌰','🧆','🍫','🍬','🍭','🍩','🍪','🧁','🎂','🍰','🍮','🍯','🥧','🍡','🍢','🧇','🥞','🫓','🥨','🧀'] },
+  { label:'🥤 탄산/청량음료',   icons:['🥤','🧃','💧','🫧','🧊','❄️','🌊','🫙','🍺','🍻','🥂','🍷','🍾','🫗','🍸','🍹','🧉','🥛','🍼','🌿','🍃','🌱','🍀','🌺','🌸','🌼','🌻','🌹','🌷','💐','🌾','🍁','🍂','🍄','🫑','🥒'] },
+  { label:'🍹 특별/칵테일',     icons:['🍹','🍸','🥂','🍷','🍾','🫗','🍻','🧉','🍶','🥃','🫖','☕','🧋','🍵','🥤','🧃','🫙','💧','🧊','❄️','🔥','✨','⭐','🌟','💫','🎊','🎉','🎈','🎀','🎁','🏆','🥇','🥈','🥉','💎','👑'] },
+  { label:'🥛 밀크/유제품',     icons:['🥛','🍦','🍧','🍨','🧈','🫙','🍮','🥮','🧁','🎂','🍰','🍩','🍪','🍫','🍬','🍭','🥧','🍡','🍢','🧆','🥞','🧇','🥐','🍞','🫓','🥨','🧀','🥚','🍳','🫕','🥘','🍲','🫔','🌮','🌯','🍱'] },
+  { label:'🍓 딸기/베리류',     icons:['🍓','🫐','🍒','🍑','🍇','🍈','🍎','🍏','🍐','🍊','🍋','🍌','🍉','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🫑','🥦','🥬','🥒','🌽','🫛','🧄','🧅','🥕','🌶️','🫚','🥜','🌰','🫘','🍄','🪸'] },
+  { label:'🥭 트로피컬/열대',   icons:['🥭','🍍','🥥','🍌','🍉','🥝','🌴','🌺','🌸','🌼','🌻','🌹','🌷','💐','🌾','🎋','🎍','🍀','🌿','🍃','🌱','🌲','🌵','🍁','🍂','🍄','🌊','🏖️','🏝️','🌅','🌄','⛅','🌤️','☀️','🌞','🌈'] },
+  { label:'🌿 티/허브/건강',    icons:['🌿','🍃','🌱','🌾','🍀','🌲','🌵','🌴','🎋','🎍','🍁','🍂','🍄','🌺','🌸','🌼','🌻','🌹','🌷','💐','🫧','💧','🧊','❄️','🔥','☀️','🌙','⭐','✨','💫','🌟','🌈','⛅','🌤️','🌊','🏔️'] },
+  { label:'🍫 디저트/간식',     icons:['🍫','🍬','🍭','🍩','🍪','🧁','🎂','🍰','🍮','🍯','🥧','🍡','🍢','🧆','🥞','🧇','🥐','🍞','🫓','🥨','🧀','🍦','🍧','🍨','🥮','🍱','🍣','🍤','🍙','🍚','🍘','🍥','🥟','🫙','🧂','🍡'] },
+  { label:'✨ 이벤트/특별',     icons:['⭐','🌟','✨','🔥','❄️','🌈','🎉','🎊','🏆','🥇','💎','🎁','🎀','🎈','🎂','🎆','🎇','🧨','🎠','🎡','🎢','🎪','🎭','🎨','🎬','🎤','🎧','🎵','🎶','🎺','🎸','🎹','🥁','🎲','🎯','🎳'] },
+  { label:'💚 색상/테마',       icons:['💚','💛','🩷','💙','🩵','❤️','🧡','💜','🤍','🩶','🤎','🖤','💝','💖','💗','💓','💞','💕','💟','❣️','💔','🫀','🫶','👍','✌️','🤞','🙌','👏','🤝','🫂','💪','🦾','🙏','☝️','🫵','💫'] },
+  { label:'🏫 학교/교육',       icons:['🏫','📚','✏️','🎒','🎓','📝','🔖','📌','🎯','🏅','🌏','🙌','📖','📕','📗','📘','📙','📒','📓','📔','📃','📄','📑','📊','📈','📉','🗒️','🗓️','📅','📆','🗑️','📁','📂','🗂️','🖇️','📎'] },
+  { label:'🎨 기타/재미',       icons:['🎨','🎭','🎪','🎠','🎡','🎢','🎯','🎲','🎮','🕹️','🎸','🎵','🎶','🎤','🎧','🎺','🎹','🥁','🎻','🎷','🪗','🪘','🎬','🎥','📷','📸','🔭','🔬','🧪','🧫','🧬','🔋','💡','🔦','🕯️','🪔'] },
+  { label:'🐾 동물/자연',       icons:['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🦆','🦅','🦉','🦇','🐺','🐗','🦄','🐝','🦋','🐛','🐌','🐞','🐜','🦟','🦗','🕷️','🦂','🐢'] },
 ];
 
 function IconPicker({ value, onChange, placeholder='🥤', small=false }) {
@@ -839,8 +876,8 @@ function EmojiPicker({ value, onChange }) {
   return <IconPicker value={value} onChange={onChange} placeholder='🏫' />;
 }
 
-function SettingsTab({ settings, onSave }) {
-  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours}});
+function SettingsTab({ settings, onSave, thm }) {
+  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green'});
   const [saved,setSaved]=useState(false);
   const [testing,setTesting]=useState(null);
   const [testResult,setTestResult]=useState(null);
@@ -872,6 +909,21 @@ function SettingsTab({ settings, onSave }) {
         <div style={{padding:'8px 12px',background:'#fff',borderRadius:10,fontSize:13,color:P,fontWeight:600}}>미리보기: {form.school?.icon||'🏫'} {form.school?.name||'학교 이름'}</div>
       </div>
 
+      {/* 앱 테마 */}
+      <div style={{marginBottom:24}}>
+        <div style={{fontSize:15,fontWeight:700,textAlign:'center',marginBottom:4}}>🎨 앱 테마</div>
+        <div style={{width:'100%',height:1,background:'#f0f0f0',marginBottom:16}} />
+        <div style={{fontSize:13,color:'#555',marginBottom:12}}>앱 전체 색상 테마를 선택합니다</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          {THEME_PRESETS.map(t=>(
+            <button key={t.id} onClick={()=>setForm(p=>({...p,themeId:t.id}))} style={{padding:'10px 8px',border:`2px solid ${(form.themeId||'green')===t.id?t.P:'#e0e0e0'}`,borderRadius:12,background:(form.themeId||'green')===t.id?t.light:'#fff',cursor:'pointer',display:'flex',alignItems:'center',gap:8}}>
+              <div style={{width:20,height:20,borderRadius:50,background:t.P,flexShrink:0}} />
+              <span style={{fontSize:12,fontWeight:700,color:(form.themeId||'green')===t.id?t.P:'#555'}}>{t.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* 배너 설정 */}
       <SH>🖼 배너 설정</SH>
       <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:20}}>
@@ -893,7 +945,7 @@ function SettingsTab({ settings, onSave }) {
         </div>
         <input value={form.banner?.image?.startsWith('data:')?'':(form.banner?.image||'')} onChange={e=>upBanner('image',e.target.value)} placeholder="또는 이미지 URL 입력" style={{...S.input,marginTop:8}} />
         {/* 미리보기 */}
-        <div style={{marginTop:10,borderRadius:12,background:`linear-gradient(135deg,${P},#2ea76a)`,padding:'12px 16px',color:'#fff',overflow:'hidden',position:'relative',minHeight:60}}>
+        <div style={{marginTop:10,borderRadius:12,background:`linear-gradient(135deg,${P},${getTheme(settings||{}).grad})`,padding:'12px 16px',color:'#fff',overflow:'hidden',position:'relative',minHeight:60}}>
           {form.banner?.image&&<img src={form.banner.image} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} onError={e=>e.target.style.display='none'} />}
           <div style={{position:'relative',zIndex:1}}>
             <div style={{fontSize:10,opacity:0.8,marginBottom:2}}>음료 주문 서비스</div>
