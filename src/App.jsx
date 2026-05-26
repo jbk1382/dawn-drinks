@@ -1,38 +1,55 @@
 import { useState, useEffect, useRef } from "react";
+import { db } from './firebase';
+import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
 const P = "#1a7a4a";
 const fmt = (n) => n.toLocaleString("ko-KR") + "원";
 const WDAY = ['일','월','화','수','목','금','토'];
 const WDAY_FULL = ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
 
-// ─── Storage (localStorage) ───────────────────────────────────
-function stGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
-function stSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
-async function getStoredUser() { return stGet('hb_user'); }
-async function setStoredUser(n) { stSet('hb_user', n); }
-async function getStoredSettings() { try { return JSON.parse(stGet('hb_settings') || 'null'); } catch { return null; } }
-async function saveStoredSettings(s) { stSet('hb_settings', JSON.stringify(s)); }
-async function getStoredDrinks() { try { const s=stGet('hb_drinks'); return s?JSON.parse(s):null; } catch { return null; } }
-async function saveStoredDrinks(d) { try { stSet('hb_drinks', JSON.stringify(d)); } catch {} }
-async function getStoredCats() { try { const s=stGet('hb_cats'); return s?JSON.parse(s):null; } catch { return null; } }
-async function saveStoredCats(c) { try { stSet('hb_cats', JSON.stringify(c)); } catch {} }
-async function getUserOrders(name) { try { return JSON.parse(stGet(`hb_orders:${name}`) || '[]'); } catch { return []; } }
+// ─── Storage (Firestore + localStorage) ───────────────────────
+// 이름만 기기별 로컬 저장
+function getStoredUser() { try { return localStorage.getItem('hb_user'); } catch { return null; } }
+function setStoredUser(n) { try { localStorage.setItem('hb_user', n); } catch {} }
+
+// Firestore 헬퍼
+async function fsGet(path, docId) {
+  try { const s=await getDoc(doc(db,path,docId)); return s.exists()?s.data():null; } catch { return null; }
+}
+async function fsSet(path, docId, data) {
+  try { await setDoc(doc(db,path,docId), data); return true; } catch(e) { console.error('fsSet error:',e); return false; }
+}
+
+async function getStoredSettings() { return fsGet('config','settings'); }
+async function saveStoredSettings(s) { await fsSet('config','settings',s); }
+async function getStoredDrinks() {
+  const d = await fsGet('config','drinks');
+  return d?.list || null;
+}
+async function saveStoredDrinks(list) { await fsSet('config','drinks',{list}); }
+async function getStoredCats() {
+  const d = await fsGet('config','cats');
+  return d?.list || null;
+}
+async function saveStoredCats(list) { await fsSet('config','cats',{list}); }
+async function getUserOrders(name) {
+  try {
+    const q = query(collection(db,'orders'), where('userName','==',name));
+    const snap = await getDocs(q);
+    const orders = [];
+    snap.forEach(d => orders.push({id:d.id,...d.data()}));
+    return orders.sort((a,b)=>new Date(b.orderTime)-new Date(a.orderTime));
+  } catch { return []; }
+}
 async function pushOrder(name, order) {
-  const prev = await getUserOrders(name);
-  const updated = [order, ...prev].slice(0, 300);
-  stSet(`hb_orders:${name}`, JSON.stringify(updated));
+  try { await addDoc(collection(db,'orders'),{...order,userName:name}); } catch(e) { console.error('pushOrder error:',e); }
 }
 async function getAllOrders() {
   try {
-    const all = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('hb_orders:')) {
-        const orders = JSON.parse(localStorage.getItem(key) || '[]');
-        all.push(...orders);
-      }
-    }
-    return all.sort((a, b) => new Date(b.orderTime) - new Date(a.orderTime));
+    const snap = await getDocs(collection(db,'orders'));
+    const orders = [];
+    snap.forEach(d => orders.push({id:d.id,...d.data()}));
+    return orders.sort((a,b)=>new Date(b.orderTime)-new Date(a.orderTime));
   } catch { return []; }
 }
 
@@ -191,7 +208,7 @@ export default function App() {
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
-        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onSaveSettings={handleSaveSettings} />}
+        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} />}
         {screen==="adminEdit"&& <AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{setDrinks(p=>d.id?p.map(x=>x.id===d.id?d:x):[...p,{...d,id:Date.now()}]);notify("저장됨 ✅");setScreen("admin");}} />}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
         {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} />}
@@ -308,7 +325,7 @@ function ListScreen({ category, drinks, onBack, onSelect, cartCount, onCart }) {
           <button key={d.id} onClick={()=>onSelect(d)} style={{width:'100%',background:'none',border:'none',borderBottom:'1px solid #f5f5f5',display:'flex',alignItems:'center',padding:'14px 16px',cursor:'pointer',gap:14,textAlign:'left',color:'#111'}}>
             <DrinkImg src={d.image} alt={d.name} style={{width:80,height:80,borderRadius:50,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} />
             <div style={{flex:1}}>
-              <div style={{display:'flex',gap:4,marginBottom:4}}>{d.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:'#fff3e0',color:'#e65100'}}>{t}</span>)}</div>
+              <div style={{display:'flex',gap:4,marginBottom:4}}>{d.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:d.tagStyle?.bg||'#fff3e0',color:d.tagStyle?.text||'#e65100'}}>{d.tagLabel||t}</span>)}</div>
               <div style={{fontSize:15,fontWeight:700,color:'#111'}}>{d.name}</div>
               <div style={{fontSize:12,color:'#999',marginTop:1}}>{d.nameEn}</div>
               <div style={{fontSize:14,fontWeight:700,color:P,marginTop:4}}>{fmt(d.price)}</div>
@@ -334,7 +351,7 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
         <DrinkImg src={drink.image} alt={drink.name} style={{width:180,height:180,objectFit:'cover',borderRadius:20}} />
       </div>
       <div style={{padding:'16px 20px'}}>
-        <div style={{display:'flex',gap:4,marginBottom:6}}>{drink.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:'#fff3e0',color:'#e65100'}}>{t}</span>)}</div>
+        <div style={{display:'flex',gap:4,marginBottom:6}}>{drink.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:drink.tagStyle?.bg||'#fff3e0',color:drink.tagStyle?.text||'#e65100'}}>{drink.tagLabel||t}</span>)}</div>
         <div style={{fontSize:22,fontWeight:800}}>{drink.name}</div>
         <div style={{fontSize:13,color:'#999',marginTop:2}}>{drink.nameEn}</div>
         <div style={{fontSize:13,color:'#666',marginTop:8,lineHeight:1.55}}>{drink.description}</div>
@@ -554,7 +571,7 @@ function OrderCard({ order, compact }) {
 }
 
 // ─── ADMIN ────────────────────────────────────────────────────
-function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, onEdit, onNew, onDelete, onToggleCat, onUpdateCat, onSaveSettings }) {
+function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, onEdit, onNew, onDelete, onToggleCat, onUpdateCat, onAddCat, onSaveSettings }) {
   return (
     <div style={S.screen}>
       <div style={S.navBar}>
@@ -569,7 +586,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
       </div>
       <div style={{flex:1,overflowY:'auto',minHeight:0}}>
         {activeTab==="drinks"     && <DrinksTab drinks={drinks} onEdit={onEdit} onDelete={onDelete} />}
-        {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} />}
+        {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} onAdd={onAddCat} />}
         {activeTab==="orders"     && <AdminOrdersTab />}
         {activeTab==="settings"   && <SettingsTab settings={settings} onSave={onSaveSettings} />}
       </div>
@@ -595,12 +612,46 @@ function DrinksTab({ drinks, onEdit, onDelete }) {
   );
 }
 
-function CategoriesTab({ cats, onToggle, onUpdate }) {
+function NewCatForm({ onAdd }) {
+  const [show,setShow] = useState(false);
+  const [icon,setIcon] = useState('');
+  const [label,setLabel] = useState('');
+  const save = () => {
+    if(!label.trim()) return;
+    onAdd({ icon: icon||'☕', label: label.trim() });
+    setIcon(''); setLabel(''); setShow(false);
+  };
+  return (
+    <div style={{marginBottom:12}}>
+      {!show ? (
+        <button onClick={()=>setShow(true)} style={{width:'100%',padding:'10px',border:`1.5px dashed ${P}`,borderRadius:12,background:'#f0faf4',color:P,fontSize:13,fontWeight:700,cursor:'pointer'}}>
+          + 새 카테고리 추가
+        </button>
+      ) : (
+        <div style={{background:'#f0faf4',borderRadius:14,padding:14,marginBottom:8}}>
+          <div style={{fontSize:13,fontWeight:600,color:P,marginBottom:10}}>새 카테고리</div>
+          <div style={{display:'flex',gap:8,marginBottom:8}}>
+            <input value={icon} onChange={e=>setIcon(e.target.value)} placeholder="🍵" style={{...S.input,width:56,marginBottom:0,textAlign:'center',fontSize:22}} />
+            <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="카테고리 이름" style={{...S.input,flex:1,marginBottom:0}} autoFocus onKeyDown={e=>e.key==='Enter'&&save()} />
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={save} disabled={!label.trim()} style={{flex:1,height:38,borderRadius:19,border:'none',background:label.trim()?P:'#ddd',color:'#fff',fontWeight:700,cursor:label.trim()?'pointer':'default',fontSize:13}}>추가</button>
+            <button onClick={()=>{setShow(false);setIcon('');setLabel('');}} style={{flex:1,height:38,borderRadius:19,border:'1px solid #ddd',background:'#fff',cursor:'pointer',fontSize:13}}>취소</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CategoriesTab({ cats, onToggle, onUpdate, onAdd }) {
   const [editing,setEditing]=useState(null);
   const [ef,setEf]=useState({label:'',icon:''});
   return (
     <div style={{flex:1,overflowY:'auto',minHeight:0,padding:16}}>
       <div style={{fontSize:13,color:'#555',lineHeight:1.6,padding:'10px 14px',background:'#f0faf4',borderRadius:12,marginBottom:16,borderLeft:`3px solid ${P}`}}>💡 이름·아이콘 수정 및 노출 여부 설정</div>
+      {/* 새 카테고리 추가 */}
+      <NewCatForm onAdd={onAdd} />
       {cats.map(cat=>(
         <div key={cat.id} style={{borderBottom:'1px solid #f5f5f5'}}>
           {editing===cat.id?(
@@ -1007,7 +1058,36 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>카테고리</div>
         <select value={form.categoryId} onChange={e=>upd('categoryId',e.target.value)} style={S.input}>{cats.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select>
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>태그</div>
-        <button onClick={()=>upd('tags',form.tags.includes('BEST')?form.tags.filter(t=>t!=='BEST'):[...form.tags,'BEST'])} style={{padding:'6px 18px',border:`1.5px solid ${form.tags.includes('BEST')?'#e65100':'#ddd'}`,borderRadius:20,background:form.tags.includes('BEST')?'#fff3e0':'#fff',color:form.tags.includes('BEST')?'#e65100':'#666',fontSize:13,cursor:'pointer',fontWeight:700,marginBottom:10}}>BEST</button>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+          <button onClick={()=>upd('tags',form.tags.includes('BEST')?form.tags.filter(t=>t!=='BEST'):[...form.tags,'BEST'])} style={{padding:'6px 18px',border:`1.5px solid ${form.tags.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#ddd'}`,borderRadius:20,background:form.tags.includes('BEST')?(form.tagStyle?.bg||'#fff3e0'):'#fff',color:form.tags.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#666',fontSize:13,cursor:'pointer',fontWeight:700}}>
+            {form.tagLabel||'BEST'}
+          </button>
+          {form.tags.includes('BEST')&&<span style={{fontSize:12,color:'#888'}}>← 미리보기</span>}
+        </div>
+        {form.tags.includes('BEST')&&(
+          <div style={{background:'#f8f8f8',borderRadius:12,padding:12,marginBottom:10}}>
+            <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:8}}>태그 커스터마이징</div>
+            <div style={{display:'flex',gap:8,marginBottom:8}}>
+              <input placeholder="태그 글자 (예: NEW, HOT)" value={form.tagLabel||'BEST'} onChange={e=>upd('tagLabel',e.target.value)} style={{...S.input,flex:1,marginBottom:0,fontSize:13}} />
+            </div>
+            <div style={{display:'flex',gap:10,alignItems:'center'}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,color:'#888',marginBottom:4}}>글자색</div>
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <input type="color" value={form.tagStyle?.text||'#e65100'} onChange={e=>upd('tagStyle',{...form.tagStyle,text:e.target.value})} style={{width:36,height:32,border:'1px solid #ddd',borderRadius:6,cursor:'pointer',padding:2}} />
+                  <input value={form.tagStyle?.text||'#e65100'} onChange={e=>upd('tagStyle',{...form.tagStyle,text:e.target.value})} style={{...S.input,flex:1,marginBottom:0,fontSize:12}} placeholder="#e65100" />
+                </div>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,color:'#888',marginBottom:4}}>배경색</div>
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <input type="color" value={form.tagStyle?.bg||'#fff3e0'} onChange={e=>upd('tagStyle',{...form.tagStyle,bg:e.target.value})} style={{width:36,height:32,border:'1px solid #ddd',borderRadius:6,cursor:'pointer',padding:2}} />
+                  <input value={form.tagStyle?.bg||'#fff3e0'} onChange={e=>upd('tagStyle',{...form.tagStyle,bg:e.target.value})} style={{...S.input,flex:1,marginBottom:0,fontSize:12}} placeholder="#fff3e0" />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>컵 사이즈</div>
         {form.sizes.map((sz,i)=>(
           <div key={i} style={{display:'flex',gap:8,marginBottom:8,alignItems:'center'}}>
