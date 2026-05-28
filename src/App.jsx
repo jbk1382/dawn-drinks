@@ -72,6 +72,40 @@ async function getUserOrders(name) {
 async function pushOrder(name, order) {
   try { await addDoc(collection(db,'orders'),{...order,userName:name}); } catch(e) { console.error('pushOrder error:',e); }
 }
+// 월 주문 한도 관리 (localStorage - 기기별)
+const MONTHLY_LIMIT = 10000; // 월 개인 한도
+const DAILY_DRINK_LIMIT = 15;  // 하루 전체 음료 한도
+
+// 하루 음료 잔수 (Firestore - 전체 공유)
+function getTodayKey() {
+  const n=new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
+async function getDailyCount() {
+  try {
+    const snap = await getDoc(doc(db,'daily',getTodayKey()));
+    return snap.exists() ? (snap.data().count||0) : 0;
+  } catch { return 0; }
+}
+async function incrementDailyCount(qty) {
+  try {
+    const k = getTodayKey();
+    const snap = await getDoc(doc(db,'daily',k));
+    const cur = snap.exists() ? (snap.data().count||0) : 0;
+    await setDoc(doc(db,'daily',k), {count:cur+qty, date:k});
+    return cur+qty;
+  } catch { return -1; }
+}
+function getMonthKey(name) {
+  const n=new Date(); return `hb_mon:${name}:${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
+}
+function getMonthlyTotal(name) {
+  try { return parseInt(localStorage.getItem(getMonthKey(name))||'0'); } catch { return 0; }
+}
+function addMonthlyTotal(name, amount) {
+  try { const k=getMonthKey(name); localStorage.setItem(k, (parseInt(localStorage.getItem(k)||'0')+amount).toString()); } catch {}
+}
+
 async function getAllOrders() {
   try {
     const snap = await getDocs(collection(db,'orders'));
@@ -129,7 +163,7 @@ function getTimeSlotsForDay(cfg, isToday) {
   if (!cfg?.enabled) return [];
   const s=parseTimeMin(cfg.start), e=parseTimeMin(cfg.end);
   if (s>=e) return [];
-  const buf = isToday ? (() => { const n=new Date(); return n.getHours()*60+n.getMinutes()+30; })() : -1;
+  const buf = isToday ? (() => { const n=new Date(); return n.getHours()*60+n.getMinutes()+15; })() : -1;
   const slots=[];
   for (let m=s; m<=e; m+=30) {
     if (isToday && m<=buf) continue;
@@ -166,6 +200,7 @@ const INIT_SETTINGS = {
   kakao: { enabled: false, accessToken: "" },
   deliveryHours: INIT_DH,
   adminPassword: "admin1234",
+  dailyLimit: 15,
 };
 
 // ─── APP ──────────────────────────────────────────────────────
@@ -200,6 +235,7 @@ export default function App() {
           deliveryHours: { ...INIT_DH, ...(stored.deliveryHours||{}) },
           adminPassword: stored.adminPassword || INIT_SETTINGS.adminPassword,
           themeId: stored.themeId || INIT_SETTINGS.themeId,
+          dailyLimit: stored.dailyLimit ?? INIT_SETTINGS.dailyLimit,
         }));
         if (storedDrinks) setDrinks(storedDrinks);
         if (storedCats) setCats(storedCats);
@@ -222,8 +258,26 @@ export default function App() {
   const addToCart = (item) => { setCart(p => [...p,{...item,cartId:Date.now()}]); notify("장바구니에 담겼습니다 🛒"); setScreen("list"); };
 
   const handleOrder = async (info) => {
+    // ① 월 개인 한도 체크
+    const monthlyUsed = getMonthlyTotal(info.name||userName);
+    if (monthlyUsed + cartTotal > MONTHLY_LIMIT) {
+      const remain = MONTHLY_LIMIT - monthlyUsed;
+      alert(`⚠️ 이번 달 주문 한도 초과\n\n이번 달 사용: ${fmt(monthlyUsed)} / ${fmt(MONTHLY_LIMIT)}\n남은 한도: ${remain>0?fmt(remain):'없음'}\n\n월 주문 한도(${fmt(MONTHLY_LIMIT)})를 초과하여 주문할 수 없습니다.\n다음 달 1일부터 다시 주문 가능합니다.`);
+      return;
+    }
+    // ② 하루 전체 잔수 한도 체크
+    const newDrinkQty = cart.reduce((s,i)=>s+i.qty, 0);
+    const dailyCount = await getDailyCount();
+    const todayLimit = settings.dailyLimit ?? DAILY_DRINK_LIMIT;
+    if (dailyCount + newDrinkQty > todayLimit) {
+      const remain = todayLimit - dailyCount;
+      alert(`⚠️ 오늘 주문 가능한 잔 수 초과\n\n오늘 주문된 잔수: ${dailyCount}잔 / ${todayLimit}잔\n남은 잔수: ${remain>0?remain+'잔':'없음'}\n\n오늘은 더 이상 주문할 수 없습니다.\n내일 다시 시도해주세요.`);
+      return;
+    }
     const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료" };
     await pushOrder(userName, order);
+    addMonthlyTotal(info.name||userName, cartTotal); // 월 사용금액 누적
+    await incrementDailyCount(newDrinkQty); // 하루 잔수 누적
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
     if (settings.telegram.enabled && settings.telegram.token) await sendTelegram(settings.telegram.token, settings.telegram.chatId, msg);
     if (settings.kakao.enabled && settings.kakao.accessToken) await sendKakao(settings.kakao.accessToken, msg);
@@ -240,14 +294,14 @@ export default function App() {
     <div style={S.shell}>
       <div style={S.phone}>
         {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} />}
-        {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>!selCat||d.categoryId===selCat.id)} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
+        {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
         {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} />}
         {screen==="adminEdit"&& <AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{setDrinks(p=>d.id?p.map(x=>x.id===d.id?d:x):[...p,{...d,id:Date.now()}]);notify("저장됨 ✅");setScreen("admin");}} />}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
-        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} />}
+        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
         {toast && <div style={S.toast}>{toast}</div>}
         {!["detail","adminEdit"].includes(screen) && <BottomNav screen={screen} setScreen={setScreen} cartCount={cartCount} />}
       </div>
@@ -463,7 +517,11 @@ function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
 }
 
 // ─── ORDER MODAL ──────────────────────────────────────────────
-function OrderModal({ totalPrice, userName, deliveryHours, onCancel, onConfirm }) {
+function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, onCancel, onConfirm, cart }) {
+  const [dailyCount, setDailyCount] = useState(0);
+  useEffect(() => { getDailyCount().then(setDailyCount); }, []);
+  const newQty = cart ? cart.reduce((s,i)=>s+i.qty,0) : 0;
+  const dailyRemain = dailyLimit - dailyCount;
   const dates = getDeliveryDates();
   const [name,setName]=useState(userName);
   const [location,setLocation]=useState("");
@@ -474,10 +532,13 @@ function OrderModal({ totalPrice, userName, deliveryHours, onCancel, onConfirm }
   const [err,setErr]=useState("");
   const isToday=date.value===dates[0].value;
   const slots=getTimeSlotsForDay(deliveryHours[date.dow], isToday);
+  const [isTakeout, setIsTakeout] = useState(false);
   const dayEnabled=deliveryHours[date.dow]?.enabled;
   const handleDateChange=(d)=>{ setDate(d); const s=getTimeSlotsForDay(deliveryHours[d.dow],d.value===dates[0].value); setTime(s[0]||''); };
-  const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:`${date.tag} ${date.label}`,deliveryTime:time}); setLoading(false); };
-  const canOrder=!!time&&dayEnabled;
+  const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:`${date.tag} ${date.label}`,deliveryTime:time,isTakeout}); setLoading(false); };
+  const monthlyUsed = getMonthlyTotal(name||userName);
+  const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
+  const canOrder=!!time&&dayEnabled&&dailyRemain>0&&monthlyRemain>0;
   return (
     <div style={S.overlay}>
       <div style={{background:'#fff',borderRadius:'22px 22px 0 0',padding:'16px 20px 32px',position:'absolute',bottom:0,left:0,right:0,maxHeight:'90%',overflowY:'auto'}}>
@@ -485,8 +546,18 @@ function OrderModal({ totalPrice, userName, deliveryHours, onCancel, onConfirm }
         <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>주문 정보 입력</div>
         <div style={S.fLabel}>주문자 이름</div>
         <input value={name} onChange={e=>{setName(e.target.value);setErr("");}} placeholder="이름" style={S.mInput} />
+        <div style={S.fLabel}>수령 방법</div>
+        <div style={{display:'flex',gap:8,marginBottom:12}}>
+          <button onClick={()=>setIsTakeout(false)} style={{flex:1,padding:'10px 0',border:`2px solid ${!isTakeout?P:'#e0e0e0'}`,borderRadius:12,background:!isTakeout?PLIGHT:'#fff',color:!isTakeout?P:'#666',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+            🚚 배달
+          </button>
+          <button onClick={()=>{setIsTakeout(true);setLocation('');setErr('');}} style={{flex:1,padding:'10px 0',border:`2px solid ${isTakeout?P:'#e0e0e0'}`,borderRadius:12,background:isTakeout?PLIGHT:'#fff',color:isTakeout?P:'#666',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+            🛍️ 테이크아웃
+          </button>
+        </div>
         <div style={S.fLabel}>배달 장소</div>
-        <input value={location} onChange={e=>{setLocation(e.target.value);setErr("");}} placeholder="예) 3학년 2반, 교무실" style={S.mInput} />
+        <input value={location} onChange={e=>{setLocation(e.target.value);setErr("");}} placeholder={isTakeout?'테이크아웃 선택됨':'예) 3학년 2반, 교무실'} disabled={isTakeout} style={{...S.mInput,background:isTakeout?'#f5f5f5':'#fff',color:isTakeout?'#aaa':'#111',cursor:isTakeout?'not-allowed':'text'}} />
+        {isTakeout&&<div style={{fontSize:12,color:P,marginTop:-8,marginBottom:10,paddingLeft:4}}>🛍️ 직접 수령합니다</div>}
         <div style={S.fLabel}>기타 요청사항 (선택)</div>
         <input value={extraRequest} onChange={e=>setExtraRequest(e.target.value)} placeholder="예) 빨대 빼주세요, 뜨겁게 해주세요" style={{...S.mInput,marginBottom:16}} />
         <div style={S.fLabel}>배달 날짜</div>
@@ -506,6 +577,34 @@ function OrderModal({ totalPrice, userName, deliveryHours, onCancel, onConfirm }
            </div>}
         {time&&dayEnabled&&<div style={{background:'#f0faf4',borderRadius:12,padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📅</span><div><div style={{fontSize:12,color:'#888'}}>선택된 배달 일시</div><div style={{fontSize:14,fontWeight:700,color:P}}>{date.tag} {date.label} {time}</div></div></div>}
         {err&&<div style={{color:'#e53935',fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
+        {/* 하루 잔수 한도 표시 */}
+        {(()=>{ const pct=Math.min(100,Math.round(dailyCount/dailyLimit*100));
+          return (<div style={{background:dailyRemain<=0?'#ffebee':dailyRemain<=3?'#fff3e0':'#f0faf4',borderRadius:12,padding:'10px 14px',marginBottom:8}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+              <span style={{fontSize:12,color:'#666'}}>🧋 오늘 주문 현황</span>
+              <span style={{fontSize:12,fontWeight:700,color:dailyRemain<=0?'#c62828':dailyRemain<=3?'#e65100':P}}>{dailyCount}잔 / {dailyLimit}잔</span>
+            </div>
+            <div style={{background:'#e0e0e0',borderRadius:4,height:6}}>
+              <div style={{width:`${pct}%`,height:'100%',borderRadius:4,background:dailyRemain<=0?'#c62828':dailyRemain<=3?'#e65100':P}} />
+            </div>
+            {dailyRemain<=0&&<div style={{fontSize:11,color:'#c62828',marginTop:4}}>⚠️ 오늘 주문 마감 ({dailyLimit}잔 완료)</div>}
+            {dailyRemain>0&&dailyRemain<=3&&<div style={{fontSize:11,color:'#e65100',marginTop:4}}>⚠️ 오늘 남은 잔수: {dailyRemain}잔</div>}
+          </div>);
+        })()}
+        {/* 월 한도 표시 */}
+        {(()=>{ const used=getMonthlyTotal(name||userName); const remain=MONTHLY_LIMIT-used; const pct=Math.min(100,Math.round(used/MONTHLY_LIMIT*100));
+          return (<div style={{background:remain<=0?'#ffebee':remain<3000?'#fff3e0':'#f0faf4',borderRadius:12,padding:'10px 14px',marginBottom:12}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+              <span style={{fontSize:12,color:'#666'}}>이번달 사용</span>
+              <span style={{fontSize:12,fontWeight:700,color:remain<=0?'#c62828':remain<3000?'#e65100':P}}>{fmt(used)} / {fmt(MONTHLY_LIMIT)}</span>
+            </div>
+            <div style={{background:'#e0e0e0',borderRadius:4,height:6}}>
+              <div style={{width:`${pct}%`,height:'100%',borderRadius:4,background:remain<=0?'#c62828':remain<3000?'#e65100':P}} />
+            </div>
+            {remain<=0&&<div style={{fontSize:11,color:'#c62828',marginTop:4}}>⚠️ 월 한도 초과 - 주문 불가</div>}
+            {remain>0&&remain<3000&&<div style={{fontSize:11,color:'#e65100',marginTop:4}}>⚠️ 남은 한도: {fmt(remain)}</div>}
+          </div>);
+        })()}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f8f8f8',borderRadius:12,padding:'12px 16px',marginBottom:16}}>
           <span style={{fontSize:14,color:'#666'}}>합계 금액</span><span style={{fontSize:20,fontWeight:800,color:P}}>{fmt(totalPrice)}</span>
         </div>
@@ -879,7 +978,7 @@ function EmojiPicker({ value, onChange }) {
 }
 
 function SettingsTab({ settings, onSave }) {
-  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green'});
+  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15});
   const [saved,setSaved]=useState(false);
   const [testing,setTesting]=useState(null);
   const [testResult,setTestResult]=useState(null);
@@ -1020,6 +1119,25 @@ function SettingsTab({ settings, onSave }) {
 
       <button onClick={save} style={{width:'100%',height:48,borderRadius:24,border:'none',background:saved?'#4caf50':P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',transition:'background 0.3s'}}>{saved?'✅ 저장 완료':'전체 설정 저장'}</button>
 
+      {/* 하루 주문 수량 설정 */}
+      <SH>🧋 하루 주문 수량 한도</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{fontSize:13,color:'#555',marginBottom:12}}>하루 전체 주문 가능한 최대 음료 잔 수를 설정합니다</div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={()=>setForm(p=>({...p,dailyLimit:Math.max(1,(p.dailyLimit??15)-1)}))} style={{width:40,height:40,borderRadius:50,border:`1.5px solid ${P}`,background:'#fff',fontSize:20,cursor:'pointer',color:P,fontWeight:700}}>－</button>
+          <div style={{flex:1,textAlign:'center'}}>
+            <div style={{fontSize:36,fontWeight:800,color:P}}>{form.dailyLimit??15}</div>
+            <div style={{fontSize:12,color:'#888'}}>잔 / 하루</div>
+          </div>
+          <button onClick={()=>setForm(p=>({...p,dailyLimit:Math.min(100,(p.dailyLimit??15)+1)}))} style={{width:40,height:40,borderRadius:50,border:`1.5px solid ${P}`,background:'#fff',fontSize:20,cursor:'pointer',color:P,fontWeight:700}}>＋</button>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+          {[5,10,15,20,30,50].map(n=>(
+            <button key={n} onClick={()=>setForm(p=>({...p,dailyLimit:n}))} style={{flex:1,minWidth:40,padding:'6px 0',border:`1.5px solid ${(form.dailyLimit??15)===n?P:'#ddd'}`,borderRadius:20,background:(form.dailyLimit??15)===n?P:'#fff',color:(form.dailyLimit??15)===n?'#fff':'#555',fontSize:13,fontWeight:700,cursor:'pointer'}}>{n}잔</button>
+          ))}
+        </div>
+      </div>
+
       {/* 비밀번호 변경 */}
       <div style={{marginTop:24}}>
         <SH>🔐 관리자 비밀번호 변경</SH>
@@ -1111,6 +1229,16 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
         <input placeholder="가격 (원) *" type="number" value={form.price} onChange={e=>upd('price',e.target.value)} style={S.input} />
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>카테고리</div>
         <select value={form.categoryId} onChange={e=>upd('categoryId',e.target.value)} style={S.input}>{cats.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select>
+        {/* 추천 카테고리 표시 */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:'#f8f8f8',borderRadius:12,marginBottom:12}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>⭐ 추천 카테고리에도 표시</div>
+            <div style={{fontSize:11,color:'#888',marginTop:2}}>기본 카테고리 외에 추천에도 보입니다</div>
+          </div>
+          <button onClick={()=>upd('featured',!form.featured)} style={{width:48,height:26,borderRadius:13,border:'none',background:form.featured?P:'#ccc',cursor:'pointer',position:'relative',transition:'background 0.2s'}}>
+            <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.featured?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
+          </button>
+        </div>
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>태그</div>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
           <button onClick={()=>upd('tags',form.tags.includes('BEST')?form.tags.filter(t=>t!=='BEST'):[...form.tags,'BEST'])} style={{padding:'6px 18px',border:`1.5px solid ${form.tags.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#ddd'}`,borderRadius:20,background:form.tags.includes('BEST')?(form.tagStyle?.bg||'#fff3e0'):'#fff',color:form.tags.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#666',fontSize:13,cursor:'pointer',fontWeight:700}}>
