@@ -413,7 +413,21 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
         <span style={{color:'#555',fontSize:18}}>›</span>
       </button>
 
-      <div style={{padding:'4px 20px 8px',fontSize:15,fontWeight:700,color:'#222'}}>카테고리</div>
+      {/* 오늘 주문 현황 */}
+      <div style={{margin:'0 16px 20px',background:dailyRemainHome<=0?'#ffebee':dailyRemainHome<=3?'#fff3e0':PLIGHT,borderRadius:14,padding:'10px 14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:'#555'}}>🧋 오늘 주문 현황</span>
+          <span style={{fontSize:12,fontWeight:800,color:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':P}}>{dailyCountHome}잔 / {dailyLimit}잔</span>
+        </div>
+        <div style={{background:'rgba(0,0,0,0.08)',borderRadius:4,height:6}}>
+          <div style={{width:`${dailyPct}%`,height:'100%',borderRadius:4,background:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':P,transition:'width 0.5s'}} />
+        </div>
+        <div style={{fontSize:11,marginTop:5,color:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':'#777'}}>
+          {dailyRemainHome<=0?'⚠️ 오늘 주문이 마감되었습니다':dailyRemainHome<=3?`⚠️ 오늘 남은 잔수: ${dailyRemainHome}잔`:`오늘 남은 잔수: ${dailyRemainHome}잔`}
+        </div>
+      </div>
+
+      <div style={{padding:'4px 20px 10px',fontSize:15,fontWeight:700,color:'#222'}}>카테고리</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,padding:'0 16px 10px'}}>
         {categories.map(cat => (
           <button key={cat.id} onClick={()=>onSelect(cat)} style={{background:'#f8f8f8',border:'none',borderRadius:14,padding:'14px 4px',display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer',color:'#111'}}>
@@ -425,19 +439,6 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
           <div style={{fontSize:30,marginBottom:5}}>📋</div>
           <div style={{fontSize:12,fontWeight:600,color:'#fff'}}>전체</div>
         </button>
-      </div>
-      {/* 오늘 주문 현황 */}
-      <div style={{margin:'0 16px 16px',background:dailyRemainHome<=0?'#ffebee':dailyRemainHome<=3?'#fff3e0':PLIGHT,borderRadius:14,padding:'10px 14px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-          <span style={{fontSize:12,fontWeight:700,color:'#555'}}>🧋 오늘 주문 현황</span>
-          <span style={{fontSize:12,fontWeight:800,color:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':P}}>{dailyCountHome}잔 / {dailyLimit}잔</span>
-        </div>
-        <div style={{background:'rgba(0,0,0,0.08)',borderRadius:4,height:6}}>
-          <div style={{width:`${dailyPct}%`,height:'100%',borderRadius:4,background:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':P,transition:'width 0.5s'}} />
-        </div>
-        <div style={{fontSize:11,marginTop:5,color:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':'#777'}}>
-          {dailyRemainHome<=0?'⚠️ 오늘 주문이 마감되었습니다':dailyRemainHome<=3?`⚠️ 오늘 남은 잔수: ${dailyRemainHome}잔`:`오늘 남은 잔수: ${dailyRemainHome}잔`}
-        </div>
       </div>
     </div>
   );
