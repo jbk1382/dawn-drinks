@@ -106,6 +106,26 @@ function addMonthlyTotal(name, amount) {
   try { const k=getMonthKey(name); localStorage.setItem(k, (parseInt(localStorage.getItem(k)||'0')+amount).toString()); } catch {}
 }
 
+async function deleteOrder(orderId) {
+  try {
+    const { deleteDoc } = await import('firebase/firestore');
+    await deleteDoc(doc(db,'orders',orderId));
+    return true;
+  } catch(e) {
+    // localStorage fallback
+    try {
+      for(let i=0;i<localStorage.length;i++){
+        const key=localStorage.key(i);
+        if(key?.startsWith('hb_orders:')){
+          const orders=JSON.parse(localStorage.getItem(key)||'[]');
+          const filtered=orders.filter(o=>String(o.id)!==String(orderId));
+          localStorage.setItem(key,JSON.stringify(filtered));
+        }
+      }
+      return true;
+    } catch { return false; }
+  }
+}
 async function getAllOrders() {
   try {
     const snap = await getDocs(collection(db,'orders'));
@@ -293,7 +313,7 @@ export default function App() {
   return (
     <div style={S.shell}>
       <div style={S.phone}>
-        {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} />}
+        {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
@@ -352,7 +372,11 @@ function LoginScreen({ onLogin }) {
 }
 
 // ─── HOME ─────────────────────────────────────────────────────
-function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, onCart, userName, onHistory }) {
+function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, onCart, userName, onHistory, dailyLimit=15 }) {
+  const [dailyCountHome, setDailyCountHome] = useState(0);
+  useEffect(()=>{ getDailyCount().then(setDailyCountHome); },[]);
+  const dailyRemainHome = dailyLimit - dailyCountHome;
+  const dailyPct = Math.min(100, Math.round(dailyCountHome/dailyLimit*100));
   const icon = school?.icon || '🏫';
   const schoolName = school?.name || '학교 음료 주문';
   const nameColor = school?.nameColor || P;
@@ -390,7 +414,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
       </button>
 
       <div style={{padding:'4px 20px 8px',fontSize:15,fontWeight:700,color:'#222'}}>카테고리</div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,padding:'0 16px 16px'}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,padding:'0 16px 10px'}}>
         {categories.map(cat => (
           <button key={cat.id} onClick={()=>onSelect(cat)} style={{background:'#f8f8f8',border:'none',borderRadius:14,padding:'14px 4px',display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer',color:'#111'}}>
             <div style={{fontSize:30,marginBottom:5}}>{cat.icon}</div>
@@ -401,6 +425,19 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
           <div style={{fontSize:30,marginBottom:5}}>📋</div>
           <div style={{fontSize:12,fontWeight:600,color:'#fff'}}>전체</div>
         </button>
+      </div>
+      {/* 오늘 주문 현황 */}
+      <div style={{margin:'0 16px 16px',background:dailyRemainHome<=0?'#ffebee':dailyRemainHome<=3?'#fff3e0':PLIGHT,borderRadius:14,padding:'10px 14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:'#555'}}>🧋 오늘 주문 현황</span>
+          <span style={{fontSize:12,fontWeight:800,color:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':P}}>{dailyCountHome}잔 / {dailyLimit}잔</span>
+        </div>
+        <div style={{background:'rgba(0,0,0,0.08)',borderRadius:4,height:6}}>
+          <div style={{width:`${dailyPct}%`,height:'100%',borderRadius:4,background:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':P,transition:'width 0.5s'}} />
+        </div>
+        <div style={{fontSize:11,marginTop:5,color:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':'#777'}}>
+          {dailyRemainHome<=0?'⚠️ 오늘 주문이 마감되었습니다':dailyRemainHome<=3?`⚠️ 오늘 남은 잔수: ${dailyRemainHome}잔`:`오늘 남은 잔수: ${dailyRemainHome}잔`}
+        </div>
       </div>
     </div>
   );
@@ -821,8 +858,25 @@ function AdminOrdersTab() {
   const [orders,setOrders]=useState(null);
   const [subTab,setSubTab]=useState('daily');
   const [open,setOpen]=useState({});
+  const [delConfirm,setDelConfirm]=useState(null);
   useEffect(()=>{ getAllOrders().then(setOrders); },[]);
+  const handleDelete=async(orderId)=>{
+    await deleteOrder(orderId);
+    setOrders(p=>p.filter(o=>String(o.id)!==String(orderId)));
+    setDelConfirm(null);
+  };
   if (!orders) return <div style={S.empty}>로딩 중...<br/><span style={{fontSize:12,color:'#aaa'}}>전체 주문 내역을 불러오는 중</span></div>;
+  if (delConfirm!==null) return (
+    <div style={S.overlay}><div style={{background:'#fff',borderRadius:20,padding:24,width:270,margin:'auto',textAlign:'center'}}>
+      <div style={{fontSize:18,marginBottom:8}}>🗑️</div>
+      <div style={{fontWeight:700,marginBottom:6}}>주문을 삭제할까요?</div>
+      <div style={{fontSize:13,color:'#888',marginBottom:20}}>삭제 후 복구할 수 없습니다</div>
+      <div style={{display:'flex',gap:10}}>
+        <button onClick={()=>setDelConfirm(null)} style={{flex:1,height:44,borderRadius:22,border:'1px solid #ddd',background:'#f5f5f5',cursor:'pointer',fontWeight:600,color:'#333'}}>취소</button>
+        <button onClick={()=>handleDelete(delConfirm)} style={{flex:1,height:44,borderRadius:22,border:'2px solid #e53935',background:'#fff0f0',color:'#c62828',fontWeight:700,cursor:'pointer'}}>삭제</button>
+      </div>
+    </div></div>
+  );
 
   const today=new Date().toISOString().split('T')[0];
   const thisMonth=today.substring(0,7);
@@ -863,7 +917,10 @@ function AdminOrdersTab() {
                     <div style={{fontSize:11,color:'#bbb',marginTop:2}}>{o.orderTime?new Date(o.orderTime).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''} 주문</div>
                     {o.items?.map((item,j)=><div key={j} style={{fontSize:12,color:'#555',marginTop:2}}>• {item.name} ({item.size}) ×{item.qty}</div>)}
                   </div>
-                  <span style={{fontSize:14,fontWeight:700,color:P,flexShrink:0,marginLeft:8}}>{fmt(o.totalPrice||0)}</span>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6,flexShrink:0,marginLeft:8}}>
+                    <span style={{fontSize:14,fontWeight:700,color:P}}>{fmt(o.totalPrice||0)}</span>
+                    <button onClick={()=>setDelConfirm(o.id||i)} style={{fontSize:11,padding:'3px 8px',border:'1px solid #ffcdd2',borderRadius:8,background:'#ffebee',color:'#c62828',cursor:'pointer',fontWeight:600}}>삭제</button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1069,11 +1126,11 @@ function SettingsTab({ settings, onSave }) {
               <span style={{fontSize:13,fontWeight:700,width:30,color:cfg.enabled?'#111':'#bbb'}}>{WDAY[day]}요일</span>
               {cfg.enabled?(
                 <>
-                  <select value={cfg.start} onChange={e=>upDH(day,'start',e.target.value)} style={{flex:1,padding:'6px 4px',border:'1px solid #e0e0e0',borderRadius:8,fontSize:12,background:'#fff',cursor:'pointer'}}>
+                  <select value={cfg.start} onChange={e=>upDH(day,'start',e.target.value)} style={{flex:1,padding:'6px 4px',border:`1.5px solid ${P}`,borderRadius:8,fontSize:12,background:'#fff',cursor:'pointer',color:'#111',fontWeight:600}}>
                     {ALL_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                   </select>
                   <span style={{fontSize:11,color:'#888'}}>~</span>
-                  <select value={cfg.end} onChange={e=>upDH(day,'end',e.target.value)} style={{flex:1,padding:'6px 4px',border:'1px solid #e0e0e0',borderRadius:8,fontSize:12,background:'#fff',cursor:'pointer'}}>
+                  <select value={cfg.end} onChange={e=>upDH(day,'end',e.target.value)} style={{flex:1,padding:'6px 4px',border:`1.5px solid ${P}`,borderRadius:8,fontSize:12,background:'#fff',cursor:'pointer',color:'#111',fontWeight:600}}>
                     {ALL_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                   </select>
                 </>
