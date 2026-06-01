@@ -1441,7 +1441,7 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
 // ─── BOTTOM NAV ───────────────────────────────────────────────
 function BottomNav({ screen, setScreen, cartCount }) {
   return (
-    <div style={{display:'flex',borderTop:'1px solid #f0f0f0',background:'#fff',flexShrink:0,paddingBottom:'env(safe-area-inset-bottom, 6px)'}}>
+    <div style={{display:'flex',borderTop:'1px solid #f0f0f0',background:'#fff',flexShrink:0,paddingBottom:'env(safe-area-inset-bottom, 12px)'}}>
       {[{id:"home",icon:"🏠",label:"Home"},{id:"cart",icon:"🛒",label:"Cart"},{id:"list",icon:"☕",label:"Order"}].map(t=>{
         const active=screen===t.id||(t.id==='list'&&screen==='detail');
         return (
@@ -1458,8 +1458,8 @@ function BottomNav({ screen, setScreen, cartCount }) {
 
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
-  shell:{width:'100%',minHeight:'100vh',display:'flex',justifyContent:'center',alignItems:'flex-start',background:'#f0f2f5',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
-  phone:{width:'100%',maxWidth:480,height:'100vh',background:'#fff',display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',color:'#111',boxShadow:'0 0 40px rgba(0,0,0,0.12)'},
+  shell:{width:'100%',minHeight:'100vh',minHeight:'100dvh',display:'flex',justifyContent:'center',alignItems:'flex-start',background:'#f0f2f5',fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif"},
+  phone:{width:'100%',maxWidth:480,height:'100vh',height:'100dvh',background:'#fff',display:'flex',flexDirection:'column',overflow:'hidden',position:'relative',color:'#111',boxShadow:'0 0 40px rgba(0,0,0,0.12)'},
   statusBar:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 24px 6px',fontSize:13,fontWeight:600,flexShrink:0},
   screen:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'},
   navBar:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 16px',borderBottom:'1px solid #f0f0f0',flexShrink:0},
