@@ -28,6 +28,42 @@ const FONT_OPTIONS = [
   {id:'gaegu',  name:'개구체',     value:"'Gaegu',cursive"},
 ];
 // P is set dynamically per component via getTheme()
+// ─── 효과음 ────────────────────────────────────────────────
+function playCartSound() {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime+0.12);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.35);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+0.35);
+    ctx.close();
+  } catch {}
+}
+function playOrderSound() {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((freq,i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + i*0.18;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.3, t+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t+0.4);
+      osc.start(t); osc.stop(t+0.4);
+    });
+    setTimeout(()=>ctx.close(), 1500);
+  } catch {}
+}
+
 function getTheme(settings) {
   return THEME_PRESETS.find(t=>t.id===(settings?.themeId||'green')) || THEME_PRESETS[0];
 }
@@ -215,7 +251,7 @@ const INIT_DH = {0:{enabled:false,start:"10:30",end:"14:30"},1:{enabled:true,sta
 const INIT_SETTINGS = {
   school: { name: "다운고등학교", icon: "🏫", nameColor: '', fontId: 'noto' },
   themeId: 'green',
-  banner: { headline: "음료를 주문하세요 🍹", subtext: "매일 신선하게 준비됩니다", image: "" },
+  banner: { headline: "음료를 주문하세요 🍹", subtext: "매일 신선하게 준비됩니다", image: "", serviceLabel: "음료 주문 서비스" },
   telegram: { enabled: false, token: "", chatId: "" },
   kakao: { enabled: false, accessToken: "" },
   deliveryHours: INIT_DH,
@@ -226,6 +262,8 @@ const INIT_SETTINGS = {
 // ─── APP ──────────────────────────────────────────────────────
 export default function App() {
   const [booting, setBooting] = useState(true);
+  const [dailyCountApp, setDailyCountApp] = useState(0);
+  useEffect(()=>{ getDailyCount().then(setDailyCountApp); },[]);
   const [userName, setUserName] = useState(null);
   const [screen, setScreen] = useState("home");
   const [selCat, setSelCat] = useState(null);
@@ -275,7 +313,7 @@ export default function App() {
   const cartTotal = cart.reduce((s,i) => s+i.totalPrice, 0);
 
   const handleLogin = async (name) => { await setStoredUser(name); setUserName(name); };
-  const addToCart = (item) => { setCart(p => [...p,{...item,cartId:Date.now()}]); notify("장바구니에 담겼습니다 🛒"); setScreen("list"); };
+  const addToCart = (item) => { setCart(p => [...p,{...item,cartId:Date.now()}]); playCartSound(); notify("장바구니에 담겼습니다 🛒"); setScreen("list"); };
 
   const handleOrder = async (info) => {
     // ① 월 개인 한도 체크
@@ -301,7 +339,7 @@ export default function App() {
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
     if (settings.telegram.enabled && settings.telegram.token) await sendTelegram(settings.telegram.token, settings.telegram.chatId, msg);
     if (settings.kakao.enabled && settings.kakao.accessToken) await sendKakao(settings.kakao.accessToken, msg);
-    setCart([]); setOrderModal(false); setSuccessOrder(order);
+    setCart([]); setOrderModal(false); setSuccessOrder(order); playOrderSound();
   };
 
   const handleSaveSettings = async (s) => { setSettings(s); await saveStoredSettings(s); notify("설정 저장됨 ✅"); };
@@ -323,6 +361,23 @@ export default function App() {
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
         {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
         {toast && <div style={S.toast}>{toast}</div>}
+        {!["detail","adminEdit"].includes(screen) && (()=>{
+          const dlimit=settings.dailyLimit??15;
+          const dRemain=dlimit-dailyCountApp;
+          const dPct=Math.min(100,Math.round(dailyCountApp/dlimit*100));
+          return (
+            <div style={{background:dRemain<=0?'#ffebee':dRemain<=3?'#fff3e0':PLIGHT,padding:'8px 16px',borderTop:'1px solid rgba(0,0,0,0.06)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                <span style={{fontSize:11,fontWeight:700,color:'#555'}}>🧋 오늘 주문 현황</span>
+                <span style={{fontSize:11,fontWeight:800,color:dRemain<=0?'#c62828':dRemain<=3?'#e65100':P}}>{dailyCountApp}잔 / {dlimit}잔</span>
+              </div>
+              <div style={{background:'rgba(0,0,0,0.08)',borderRadius:3,height:4}}>
+                <div style={{width:`${dPct}%`,height:'100%',borderRadius:3,background:dRemain<=0?'#c62828':dRemain<=3?'#e65100':P,transition:'width 0.5s'}} />
+              </div>
+              {dRemain<=0&&<div style={{fontSize:10,color:'#c62828',marginTop:3}}>⚠️ 오늘 주문 마감</div>}
+            </div>
+          );
+        })()}
         {!["detail","adminEdit"].includes(screen) && <BottomNav screen={screen} setScreen={setScreen} cartCount={cartCount} />}
       </div>
     </div>
@@ -373,10 +428,6 @@ function LoginScreen({ onLogin }) {
 
 // ─── HOME ─────────────────────────────────────────────────────
 function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, onCart, userName, onHistory, dailyLimit=15 }) {
-  const [dailyCountHome, setDailyCountHome] = useState(0);
-  useEffect(()=>{ getDailyCount().then(setDailyCountHome); },[]);
-  const dailyRemainHome = dailyLimit - dailyCountHome;
-  const dailyPct = Math.min(100, Math.round(dailyCountHome/dailyLimit*100));
   const icon = school?.icon || '🏫';
   const schoolName = school?.name || '학교 음료 주문';
   const nameColor = school?.nameColor || P;
@@ -400,7 +451,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
         {bannerImg && <img src={bannerImg} alt="" onError={e=>e.target.style.display='none'} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} />}
         <div style={{padding:'18px 22px',color:'#fff',position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
           <div style={{flex:1}}>
-            <div style={{fontSize:11,opacity:0.8,marginBottom:4}}>음료 주문 서비스</div>
+            <div style={{fontSize:11,opacity:0.8,marginBottom:4}}>{banner?.serviceLabel||'음료 주문 서비스'}</div>
             <div style={{fontSize:19,fontWeight:800,lineHeight:1.35}}>{banner?.headline || `${schoolName} 음료를 주문하세요 🍹`}</div>
             <div style={{fontSize:12,marginTop:6,opacity:0.8}}>{banner?.subtext || '매일 신선하게 준비됩니다'}</div>
           </div>
@@ -412,20 +463,6 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
         <div style={{display:'flex',alignItems:'center',gap:8}}><span>📋</span><span style={{fontSize:14,fontWeight:600,color:P}}>내 주문 내역 보기</span></div>
         <span style={{color:'#555',fontSize:18}}>›</span>
       </button>
-
-      {/* 오늘 주문 현황 */}
-      <div style={{margin:'0 16px 20px',background:dailyRemainHome<=0?'#ffebee':dailyRemainHome<=3?'#fff3e0':PLIGHT,borderRadius:14,padding:'10px 14px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-          <span style={{fontSize:12,fontWeight:700,color:'#555'}}>🧋 오늘 주문 현황</span>
-          <span style={{fontSize:12,fontWeight:800,color:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':P}}>{dailyCountHome}잔 / {dailyLimit}잔</span>
-        </div>
-        <div style={{background:'rgba(0,0,0,0.08)',borderRadius:4,height:6}}>
-          <div style={{width:`${dailyPct}%`,height:'100%',borderRadius:4,background:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':P,transition:'width 0.5s'}} />
-        </div>
-        <div style={{fontSize:11,marginTop:5,color:dailyRemainHome<=0?'#c62828':dailyRemainHome<=3?'#e65100':'#777'}}>
-          {dailyRemainHome<=0?'⚠️ 오늘 주문이 마감되었습니다':dailyRemainHome<=3?`⚠️ 오늘 남은 잔수: ${dailyRemainHome}잔`:`오늘 남은 잔수: ${dailyRemainHome}잔`}
-        </div>
-      </div>
 
       <div style={{padding:'4px 20px 10px',fontSize:15,fontWeight:700,color:'#222'}}>카테고리</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,padding:'0 16px 10px'}}>
@@ -573,7 +610,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, onCanc
   const [isTakeout, setIsTakeout] = useState(false);
   const dayEnabled=deliveryHours[date.dow]?.enabled;
   const handleDateChange=(d)=>{ setDate(d); const s=getTimeSlotsForDay(deliveryHours[d.dow],d.value===dates[0].value); setTime(s[0]||''); };
-  const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:`${date.tag} ${date.label}`,deliveryTime:time,isTakeout}); setLoading(false); };
+  const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:`${date.tag} ${date.label}`,deliveryTime:time,isTakeout}); setLoading(false); };
   const monthlyUsed = getMonthlyTotal(name||userName);
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
   const canOrder=!!time&&dayEnabled&&dailyRemain>0&&monthlyRemain>0;
@@ -594,8 +631,8 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, onCanc
           </button>
         </div>
         <div style={S.fLabel}>배달 장소</div>
-        <input value={location} onChange={e=>{setLocation(e.target.value);setErr("");}} placeholder={isTakeout?'테이크아웃 선택됨':'예) 3학년 2반, 교무실'} disabled={isTakeout} style={{...S.mInput,background:isTakeout?'#f5f5f5':'#fff',color:isTakeout?'#aaa':'#111',cursor:isTakeout?'not-allowed':'text'}} />
-        {isTakeout&&<div style={{fontSize:12,color:P,marginTop:-8,marginBottom:10,paddingLeft:4}}>🛍️ 직접 수령합니다</div>}
+        <input value={location} onChange={e=>{setLocation(e.target.value);setErr("");}} placeholder={isTakeout?'테이크아웃: 1층 통합교육지원반':'예) 3학년 2반, 교무실'} disabled={isTakeout} style={{...S.mInput,background:isTakeout?'#f5f5f5':'#fff',color:isTakeout?'#aaa':'#111',cursor:isTakeout?'not-allowed':'text'}} />
+        {isTakeout&&<div style={{fontSize:12,color:P,marginTop:-8,marginBottom:10,paddingLeft:4}}>🛍️ 테이크아웃: 1층 통합교육지원반</div>}
         <div style={S.fLabel}>기타 요청사항 (선택)</div>
         <input value={extraRequest} onChange={e=>setExtraRequest(e.target.value)} placeholder="예) 빨대 빼주세요, 뜨겁게 해주세요" style={{...S.mInput,marginBottom:16}} />
         <div style={S.fLabel}>배달 날짜</div>
@@ -1087,6 +1124,8 @@ function SettingsTab({ settings, onSave }) {
       <SH>🖼 배너 설정</SH>
       <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:20}}>
         <div style={{fontSize:12,color:'#888',marginBottom:10}}>홈 화면 배너의 문구와 이미지를 설정합니다</div>
+        <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>서비스 라벨 (배너 상단 작은 글씨)</div>
+        <input value={form.banner?.serviceLabel||''} onChange={e=>upBanner('serviceLabel',e.target.value)} placeholder="음료 주문 서비스" style={S.input} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>헤드라인 문구</div>
         <input value={form.banner?.headline||''} onChange={e=>upBanner('headline',e.target.value)} placeholder="음료를 주문하세요 🍹" style={S.input} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>서브 문구</div>
