@@ -32,35 +32,40 @@ const FONT_OPTIONS = [
 function playCartSound() {
   try {
     const ctx = new (window.AudioContext||window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime+0.12);
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.35);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+0.35);
-    ctx.close();
+    ctx.resume().then(() => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime+0.12);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime+0.4);
+      setTimeout(()=>ctx.close(), 600);
+    });
   } catch {}
 }
 function playOrderSound() {
   try {
     const ctx = new (window.AudioContext||window.webkitAudioContext)();
-    const notes = [523.25, 659.25, 783.99, 1046.50];
-    notes.forEach((freq,i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      const t = ctx.currentTime + i*0.18;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.3, t+0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, t+0.4);
-      osc.start(t); osc.stop(t+0.4);
+    ctx.resume().then(() => {
+      const notes = [523.25, 659.25, 783.99, 1046.50];
+      notes.forEach((freq,i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        const t = ctx.currentTime + i*0.18;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.3, t+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, t+0.4);
+        osc.start(t); osc.stop(t+0.4);
+      });
+      setTimeout(()=>ctx.close(), 1500);
     });
-    setTimeout(()=>ctx.close(), 1500);
   } catch {}
 }
 
@@ -1233,6 +1238,39 @@ function SettingsTab({ settings, onSave }) {
             <button key={n} onClick={()=>setForm(p=>({...p,dailyLimit:n}))} style={{flex:1,minWidth:40,padding:'6px 0',border:`1.5px solid ${(form.dailyLimit??15)===n?P:'#ddd'}`,borderRadius:20,background:(form.dailyLimit??15)===n?P:'#fff',color:(form.dailyLimit??15)===n?'#fff':'#555',fontSize:13,fontWeight:700,cursor:'pointer'}}>{n}잔</button>
           ))}
         </div>
+      </div>
+
+      {/* QR 코드 */}
+      <SH>📱 QR 코드</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:16,marginBottom:16}}>
+        <div style={{fontSize:13,color:'#555',marginBottom:12}}>앱 주소를 QR코드로 공유하세요</div>
+        {(()=>{
+          const url = encodeURIComponent(window.location.origin);
+          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${url}&bgcolor=ffffff&color=000000&margin=10`;
+          return (
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12}}>
+              <div style={{background:'#fff',borderRadius:12,padding:12,boxShadow:'0 2px 8px rgba(0,0,0,0.08)'}}>
+                <img src={qrUrl} alt="QR코드" style={{width:180,height:180,borderRadius:8}} />
+              </div>
+              <div style={{fontSize:12,color:'#888',textAlign:'center',wordBreak:'break-all',padding:'0 8px'}}>{window.location.origin}</div>
+              <div style={{display:'flex',gap:8,width:'100%'}}>
+                <button onClick={()=>{
+                  const a=document.createElement('a');
+                  a.href=qrUrl; a.download='daun-drinks-qr.png'; a.click();
+                }} style={{flex:1,padding:'10px 0',border:`1.5px solid ${P}`,borderRadius:12,background:'#fff',color:P,fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                  💾 QR 저장
+                </button>
+                <button onClick={()=>{
+                  navigator.clipboard?.writeText(window.location.origin)
+                  .then(()=>alert('주소가 복사되었습니다!'))
+                  .catch(()=>alert(window.location.origin));
+                }} style={{flex:1,padding:'10px 0',border:'1.5px solid #ddd',borderRadius:12,background:'#fff',color:'#555',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                  🔗 주소 복사
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 비밀번호 변경 */}
