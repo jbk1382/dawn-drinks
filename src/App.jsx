@@ -256,7 +256,7 @@ const INIT_DH = {0:{enabled:false,start:"10:30",end:"14:30"},1:{enabled:true,sta
 const INIT_SETTINGS = {
   school: { name: "다운고등학교", icon: "🏫", nameColor: '', fontId: 'noto' },
   themeId: 'green',
-  banner: { headline: "음료를 주문하세요 🍹", subtext: "매일 신선하게 준비됩니다", image: "", serviceLabel: "음료 주문 서비스" },
+  banner: { headline: "음료를 주문하세요 🍹", subtext: "매일 신선하게 준비됩니다", image: "", serviceLabel: "음료 주문 서비스", serviceLabelStyle:{size:12,color:'',bold:false,italic:false,underline:false}, headlineStyle:{size:22,color:'',bold:true,italic:false,underline:false}, subtextStyle:{size:13,color:'',bold:false,italic:false,underline:false} },
   telegram: { enabled: false, token: "", chatId: "" },
   kakao: { enabled: false, accessToken: "" },
   deliveryHours: INIT_DH,
@@ -456,9 +456,9 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
         {bannerImg && <img src={bannerImg} alt="" onError={e=>e.target.style.display='none'} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} />}
         <div style={{padding:'18px 22px',color:'#fff',position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
           <div style={{flex:1}}>
-            <div style={{fontSize:11,opacity:0.8,marginBottom:4}}>{banner?.serviceLabel||'음료 주문 서비스'}</div>
+            <div style={{fontSize:banner?.serviceLabelStyle?.size||12,opacity:0.85,marginBottom:4,color:banner?.serviceLabelStyle?.color||'rgba(255,255,255,0.9)',fontWeight:banner?.serviceLabelStyle?.bold?800:400,fontStyle:banner?.serviceLabelStyle?.italic?'italic':'normal',textDecoration:banner?.serviceLabelStyle?.underline?'underline':'none'}}>{banner?.serviceLabel||'음료 주문 서비스'}</div>
             <div style={{fontSize:19,fontWeight:800,lineHeight:1.35}}>{banner?.headline || `${schoolName} 음료를 주문하세요 🍹`}</div>
-            <div style={{fontSize:12,marginTop:6,opacity:0.8}}>{banner?.subtext || '매일 신선하게 준비됩니다'}</div>
+            <div style={{fontSize:banner?.subtextStyle?.size||12,marginTop:6,opacity:0.85,color:banner?.subtextStyle?.color||'rgba(255,255,255,0.85)',fontWeight:banner?.subtextStyle?.bold?700:400,fontStyle:banner?.subtextStyle?.italic?'italic':'normal',textDecoration:banner?.subtextStyle?.underline?'underline':'none'}}>{banner?.subtext || '매일 신선하게 준비됩니다'}</div>
           </div>
           {!bannerImg && <div style={{fontSize:44,opacity:0.3}}>☕</div>}
         </div>
@@ -517,7 +517,8 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
   const [opts,setOpts]=useState(()=>Object.fromEntries(drink.options.map(o=>[o.id,o.default])));
   const total=(drink.price+selSz.price)*qty;
   return (
-    <div style={{...S.screen,overflowY:'auto',minHeight:0,paddingBottom:90}}>
+    <div style={{...S.screen,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:0,paddingBottom:8}}>
       <div style={{height:240,background:'#f8f8f8',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
         <button onClick={onBack} style={{position:'absolute',top:12,left:12,background:'rgba(255,255,255,0.9)',border:'none',borderRadius:50,width:36,height:36,fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#333'}}>‹</button>
         <DrinkImg src={drink.image} alt={drink.name} style={{width:180,height:180,objectFit:'cover',borderRadius:20}} />
@@ -548,17 +549,18 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
             </div>
           ))}
         </>}
-        <div style={{display:'flex',alignItems:'center',gap:12,marginTop:16,padding:'12px 0',borderTop:'1px solid #f0f0f0'}}>
-          <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={S.qtyBtn}>−</button>
-          <span style={{fontSize:18,fontWeight:700,minWidth:24,textAlign:'center'}}>{qty}</span>
-          <button onClick={()=>setQty(q=>q+1)} style={S.qtyBtn}>+</button>
-          <span style={{marginLeft:'auto',fontSize:20,fontWeight:800}}>{fmt(total)}</span>
-        </div>
       </div>
-      <div style={{position:'sticky',bottom:0,background:'#fff',padding:'12px 16px',borderTop:'1px solid #f0f0f0',display:'flex',gap:10}}>
-        <button style={{width:46,height:46,borderRadius:50,border:'1.5px solid #ddd',background:'#fff',fontSize:20,cursor:'pointer',color:'#e53935'}}>♡</button>
+      </div>
+      {/* 하단 고정 액션바 */}
+      <div style={{flexShrink:0,background:'#fff',padding:'10px 16px',borderTop:'1px solid #f0f0f0',display:'flex',gap:10,alignItems:'center'}}>
+        <button style={{width:46,height:46,borderRadius:50,border:'1.5px solid #ddd',background:'#fff',fontSize:20,cursor:'pointer',color:'#e53935',flexShrink:0}}>♡</button>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+          <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:32,height:32,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:'pointer',color:'#333',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+          <span style={{fontSize:15,fontWeight:700,minWidth:20,textAlign:'center'}}>{qty}</span>
+          <button onClick={()=>setQty(q=>q+1)} style={{width:32,height:32,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:'pointer',color:'#333',display:'flex',alignItems:'center',justifyContent:'center'}}>＋</button>
+        </div>
         <button onClick={onBack} style={{flex:1,height:46,borderRadius:24,border:'1.5px solid #ddd',background:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',color:'#333'}}>닫기</button>
-        <button onClick={()=>onAddToCart({drink,selectedSize:selSz,optionChoices:opts,qty,totalPrice:total})} style={{flex:2,height:46,borderRadius:24,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>담기</button>
+        <button onClick={()=>onAddToCart({drink,selectedSize:selSz,optionChoices:opts,qty,totalPrice:total})} style={{flex:2,height:46,borderRadius:24,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>담기 {fmt(total)}</button>
       </div>
     </div>
   );
@@ -1077,6 +1079,29 @@ function EmojiPicker({ value, onChange }) {
   return <IconPicker value={value} onChange={onChange} placeholder='🏫' />;
 }
 
+function TextStyleBar({ label, value={}, onChange }) {
+  const upd = (k,v) => onChange({...value,[k]:v});
+  return (
+    <div style={{marginBottom:16}}>
+      <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:6}}>{label}</div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+        <button onClick={()=>upd('bold',!value.bold)} style={{width:34,height:34,borderRadius:8,border:`1.5px solid ${value.bold?P:'#ddd'}`,background:value.bold?PLIGHT:'#fff',fontWeight:800,fontSize:14,cursor:'pointer',color:value.bold?P:'#555'}}>B</button>
+        <button onClick={()=>upd('italic',!value.italic)} style={{width:34,height:34,borderRadius:8,border:`1.5px solid ${value.italic?P:'#ddd'}`,background:value.italic?PLIGHT:'#fff',fontStyle:'italic',fontWeight:700,fontSize:14,cursor:'pointer',color:value.italic?P:'#555'}}>I</button>
+        <button onClick={()=>upd('underline',!value.underline)} style={{width:34,height:34,borderRadius:8,border:`1.5px solid ${value.underline?P:'#ddd'}`,background:value.underline?PLIGHT:'#fff',textDecoration:'underline',fontWeight:700,fontSize:14,cursor:'pointer',color:value.underline?P:'#555'}}>U</button>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <button onClick={()=>upd('size',Math.max(8,(value.size||14)-1))} style={{width:28,height:34,borderRadius:8,border:'1px solid #ddd',background:'#fff',cursor:'pointer',fontSize:14,color:'#555'}}>−</button>
+          <span style={{fontSize:13,fontWeight:700,minWidth:28,textAlign:'center'}}>{value.size||14}px</span>
+          <button onClick={()=>upd('size',Math.min(40,(value.size||14)+1))} style={{width:28,height:34,borderRadius:8,border:'1px solid #ddd',background:'#fff',cursor:'pointer',fontSize:14,color:'#555'}}>+</button>
+        </div>
+        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+          <input type="color" value={value.color||'#ffffff'} onChange={e=>upd('color',e.target.value)} style={{width:34,height:34,border:'1px solid #ddd',borderRadius:8,cursor:'pointer',padding:2}} />
+          <button onClick={()=>upd('color','')} style={{padding:'4px 8px',border:'1px solid #ddd',borderRadius:8,background:'#f5f5f5',fontSize:11,cursor:'pointer',color:'#666'}}>기본</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsTab({ settings, onSave }) {
   const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15});
   const [saved,setSaved]=useState(false);
@@ -1131,10 +1156,13 @@ function SettingsTab({ settings, onSave }) {
         <div style={{fontSize:12,color:'#888',marginBottom:10}}>홈 화면 배너의 문구와 이미지를 설정합니다</div>
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>서비스 라벨 (배너 상단 작은 글씨)</div>
         <input value={form.banner?.serviceLabel||''} onChange={e=>upBanner('serviceLabel',e.target.value)} placeholder="음료 주문 서비스" style={S.input} />
+        <TextStyleBar label="서비스 라벨 스타일" value={form.banner?.serviceLabelStyle||{}} onChange={v=>upBanner('serviceLabelStyle',v)} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>헤드라인 문구</div>
         <input value={form.banner?.headline||''} onChange={e=>upBanner('headline',e.target.value)} placeholder="음료를 주문하세요 🍹" style={S.input} />
+        <TextStyleBar label="헤드라인 스타일" value={form.banner?.headlineStyle||{}} onChange={v=>upBanner('headlineStyle',v)} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>서브 문구</div>
         <input value={form.banner?.subtext||''} onChange={e=>upBanner('subtext',e.target.value)} placeholder="매일 신선하게 준비됩니다" style={S.input} />
+        <TextStyleBar label="서브 문구 스타일" value={form.banner?.subtextStyle||{}} onChange={v=>upBanner('subtextStyle',v)} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:6}}>배너 이미지</div>
         {form.banner?.image&&(
           <div style={{marginBottom:8,position:'relative'}}>
