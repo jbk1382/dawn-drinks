@@ -220,7 +220,7 @@ function buildAdminMsg(info, cart, total, schoolName) {
 // ─── Date / Time ──────────────────────────────────────────────
 const ALL_TIME_OPTIONS = (() => {
   const o = [];
-  for (let h = 8; h <= 18; h++) [0,30].forEach(m => { if (!(h===18&&m>0)) o.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`); });
+  for (let h = 8; h <= 18; h++) [0,10,20,30,40,50].forEach(m => { if (!(h===18&&m>0)) o.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`); });
   return o;
 })();
 function parseTimeMin(t) { const [h,m] = t.split(':').map(Number); return h*60+m; }
@@ -237,7 +237,7 @@ function getTimeSlotsForDay(cfg, isToday) {
   if (s>=e) return [];
   const buf = isToday ? (() => { const n=new Date(); return n.getHours()*60+n.getMinutes()+15; })() : -1;
   const slots=[];
-  for (let m=s; m<=e; m+=30) {
+  for (let m=s; m<=e; m+=10) {
     if (isToday && m<=buf) continue;
     slots.push(`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`);
   }
@@ -668,8 +668,19 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, onCanc
         <div style={S.fLabel}>배달 시간</div>
         {!dayEnabled ? <div style={{padding:'12px 14px',background:'#fff3e0',borderRadius:12,marginBottom:16,fontSize:13,color:'#e65100'}}>⚠️ {WDAY_FULL[date.dow]}은 배달 운영일이 아닙니다</div>
          : slots.length===0 ? <div style={{padding:'12px 14px',background:'#fff3e0',borderRadius:12,marginBottom:16,fontSize:13,color:'#e65100'}}>⚠️ 오늘 주문 가능한 시간이 지났습니다. 내일을 선택해주세요.</div>
-         : <div style={{display:'flex',flexWrap:'wrap',gap:7,marginBottom:16}}>
-             {slots.map(t=><button key={t} onClick={()=>setTime(t)} style={{padding:'7px 13px',border:`1.5px solid ${time===t?P:'#e0e0e0'}`,borderRadius:20,background:time===t?P:'#fff',color:time===t?'#fff':'#555',fontSize:13,fontWeight:time===t?700:400,cursor:'pointer'}}>{t}</button>)}
+         : <div style={{marginBottom:14}}>
+             {/* 시간대 그룹 선택 */}
+             <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}}>
+               {[...new Set(slots.map(t=>t.split(':')[0]))].map(h=>(
+                 <button key={h} onClick={()=>{ const first=slots.find(t=>t.startsWith(h+':')); if(first) setTime(first); }} style={{padding:'5px 12px',border:`1.5px solid ${time?.startsWith(h+':')?P:'#e0e0e0'}`,borderRadius:20,background:time?.startsWith(h+':')?P:'#fff',color:time?.startsWith(h+':')?'#fff':'#555',fontSize:12,fontWeight:700,cursor:'pointer'}}>{h}시</button>
+               ))}
+             </div>
+             {/* 선택된 시간대의 분 선택 */}
+             {time&&<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+               {slots.filter(t=>t.startsWith(time.split(':')[0]+':')).map(t=>(
+                 <button key={t} onClick={()=>setTime(t)} style={{padding:'6px 14px',border:`1.5px solid ${time===t?P:'#e0e0e0'}`,borderRadius:20,background:time===t?P:'#fff',color:time===t?'#fff':'#555',fontSize:13,fontWeight:time===t?700:400,cursor:'pointer'}}>{t}</button>
+               ))}
+             </div>}
            </div>}
         {time&&dayEnabled&&<div style={{background:'#f0faf4',borderRadius:12,padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📅</span><div><div style={{fontSize:12,color:'#888'}}>선택된 배달 일시</div><div style={{fontSize:14,fontWeight:700,color:P}}>{date.tag} {date.label} {time}</div></div></div>}
         {err&&<div style={{color:'#e53935',fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
