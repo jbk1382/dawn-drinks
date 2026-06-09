@@ -122,19 +122,30 @@ function getTodayKey() {
   const n=new Date();
   return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
 }
-async function getDailyCount() {
+async function getDailyData() {
   try {
     const snap = await getDoc(doc(db,'daily',getTodayKey()));
-    return snap.exists() ? (snap.data().count||0) : 0;
-  } catch { return 0; }
+    return snap.exists() ? snap.data() : {count:0, drinkCounts:{}};
+  } catch { return {count:0, drinkCounts:{}}; }
 }
-async function incrementDailyCount(qty) {
+async function getDailyCount() {
+  const d = await getDailyData(); return d.count||0;
+}
+async function getDrinkDailyCount(drinkId) {
+  const d = await getDailyData(); return (d.drinkCounts||{})[drinkId]||0;
+}
+async function incrementDailyCount(qty, cart) {
   try {
     const k = getTodayKey();
     const snap = await getDoc(doc(db,'daily',k));
-    const cur = snap.exists() ? (snap.data().count||0) : 0;
-    await setDoc(doc(db,'daily',k), {count:cur+qty, date:k});
-    return cur+qty;
+    const cur = snap.exists() ? snap.data() : {count:0, drinkCounts:{}};
+    const drinkCounts = {...(cur.drinkCounts||{})};
+    if(cart) cart.forEach(item=>{
+      const id = item.drink.id||item.drink.name;
+      drinkCounts[id] = (drinkCounts[id]||0) + item.qty;
+    });
+    await setDoc(doc(db,'daily',k), {count:(cur.count||0)+qty, drinkCounts, date:k});
+    return (cur.count||0)+qty;
   } catch { return -1; }
 }
 function getMonthKey(name) {
@@ -256,7 +267,7 @@ const INIT_DH = {0:{enabled:false,start:"10:30",end:"14:30"},1:{enabled:true,sta
 const INIT_SETTINGS = {
   school: { name: "다운고등학교", icon: "🏫", nameColor: '', fontId: 'noto' },
   themeId: 'green',
-  banner: { headline: "음료를 주문하세요 🍹", subtext: "매일 신선하게 준비됩니다", image: "", serviceLabel: "음료 주문 서비스" },
+  banner: { headline: "음료를 주문하세요 🍹", subtext: "매일 신선하게 준비됩니다", image: "", serviceLabel: "음료 주문 서비스", serviceLabelStyle:{size:12,color:'',bold:false,italic:false,underline:false}, headlineStyle:{size:22,color:'',bold:true,italic:false,underline:false}, subtextStyle:{size:13,color:'',bold:false,italic:false,underline:false} },
   telegram: { enabled: false, token: "", chatId: "" },
   kakao: { enabled: false, accessToken: "" },
   deliveryHours: INIT_DH,
@@ -340,7 +351,7 @@ export default function App() {
     const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료" };
     await pushOrder(userName, order);
     addMonthlyTotal(info.name||userName, cartTotal); // 월 사용금액 누적
-    await incrementDailyCount(newDrinkQty); // 하루 잔수 누적
+    await incrementDailyCount(newDrinkQty, cart); // 하루 잔수 누적
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
     if (settings.telegram.enabled && settings.telegram.token) await sendTelegram(settings.telegram.token, settings.telegram.chatId, msg);
     if (settings.kakao.enabled && settings.kakao.accessToken) await sendKakao(settings.kakao.accessToken, msg);
@@ -357,11 +368,11 @@ export default function App() {
     <div style={S.shell}>
       <div style={S.phone}>
         {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} />}
-        {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
+        {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(d.visible===false) return false; if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
-        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} />}
+        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} onReorder={setDrinks} onToggleVisible={id=>setDrinks(p=>p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d))} />}
         {screen==="adminEdit"&& <AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{setDrinks(p=>d.id?p.map(x=>x.id===d.id?d:x):[...p,{...d,id:Date.now()}]);notify("저장됨 ✅");setScreen("admin");}} />}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
         {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
@@ -456,9 +467,9 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
         {bannerImg && <img src={bannerImg} alt="" onError={e=>e.target.style.display='none'} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} />}
         <div style={{padding:'18px 22px',color:'#fff',position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
           <div style={{flex:1}}>
-            <div style={{fontSize:11,opacity:0.8,marginBottom:4}}>{banner?.serviceLabel||'음료 주문 서비스'}</div>
+            <div style={{fontSize:banner?.serviceLabelStyle?.size||12,opacity:0.85,marginBottom:4,color:banner?.serviceLabelStyle?.color||'rgba(255,255,255,0.9)',fontWeight:banner?.serviceLabelStyle?.bold?800:400,fontStyle:banner?.serviceLabelStyle?.italic?'italic':'normal',textDecoration:banner?.serviceLabelStyle?.underline?'underline':'none'}}>{banner?.serviceLabel||'음료 주문 서비스'}</div>
             <div style={{fontSize:19,fontWeight:800,lineHeight:1.35}}>{banner?.headline || `${schoolName} 음료를 주문하세요 🍹`}</div>
-            <div style={{fontSize:12,marginTop:6,opacity:0.8}}>{banner?.subtext || '매일 신선하게 준비됩니다'}</div>
+            <div style={{fontSize:banner?.subtextStyle?.size||12,marginTop:6,opacity:0.85,color:banner?.subtextStyle?.color||'rgba(255,255,255,0.85)',fontWeight:banner?.subtextStyle?.bold?700:400,fontStyle:banner?.subtextStyle?.italic?'italic':'normal',textDecoration:banner?.subtextStyle?.underline?'underline':'none'}}>{banner?.subtext || '매일 신선하게 준비됩니다'}</div>
           </div>
           {!bannerImg && <div style={{fontSize:44,opacity:0.3}}>☕</div>}
         </div>
@@ -488,13 +499,16 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
 
 // ─── LIST ─────────────────────────────────────────────────────
 function ListScreen({ category, drinks, onBack, onSelect, cartCount, onCart }) {
+  const [drinkCounts, setDrinkCounts] = useState({});
+  useEffect(()=>{ getDailyData().then(d=>setDrinkCounts(d.drinkCounts||{})); },[]);
+  const isSoldOut = (d) => d.dailyMax>0 && (drinkCounts[d.id||d.name]||0)>=d.dailyMax;
   return (
     <div style={S.screen}>
       <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>{category?category.label:"전체 메뉴"}</span><button onClick={onCart} style={{...S.iconBtn,position:'relative'}}>🛒{cartCount>0&&<span style={S.badge}>{cartCount}</span>}</button></div>
       <div style={{flex:1,overflowY:'auto',minHeight:0}}>
         {drinks.length===0&&<div style={S.empty}>등록된 음료가 없습니다</div>}
         {drinks.map(d=>(
-          <button key={d.id} onClick={()=>onSelect(d)} style={{width:'100%',background:'none',border:'none',borderBottom:'1px solid #f5f5f5',display:'flex',alignItems:'center',padding:'14px 16px',cursor:'pointer',gap:14,textAlign:'left',color:'#111'}}>
+          <button key={d.id} onClick={()=>!isSoldOut(d)&&onSelect(d)} style={{width:'100%',background:'none',border:'none',borderBottom:'1px solid #f5f5f5',display:'flex',alignItems:'center',padding:'14px 16px',cursor:isSoldOut(d)?'not-allowed':'pointer',gap:14,textAlign:'left',color:'#111',opacity:isSoldOut(d)?0.5:1}}>
             <DrinkImg src={d.image} alt={d.name} style={{width:80,height:80,borderRadius:50,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} />
             <div style={{flex:1}}>
               <div style={{display:'flex',gap:4,marginBottom:4}}>{d.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:d.tagStyle?.bg||'#fff3e0',color:d.tagStyle?.text||'#e65100'}}>{d.tagLabel||t}</span>)}</div>
@@ -517,7 +531,8 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
   const [opts,setOpts]=useState(()=>Object.fromEntries(drink.options.map(o=>[o.id,o.default])));
   const total=(drink.price+selSz.price)*qty;
   return (
-    <div style={{...S.screen,overflowY:'auto',minHeight:0,paddingBottom:90}}>
+    <div style={{...S.screen,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:0,paddingBottom:8}}>
       <div style={{height:240,background:'#f8f8f8',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
         <button onClick={onBack} style={{position:'absolute',top:12,left:12,background:'rgba(255,255,255,0.9)',border:'none',borderRadius:50,width:36,height:36,fontSize:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#333'}}>‹</button>
         <DrinkImg src={drink.image} alt={drink.name} style={{width:180,height:180,objectFit:'cover',borderRadius:20}} />
@@ -548,17 +563,18 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
             </div>
           ))}
         </>}
-        <div style={{display:'flex',alignItems:'center',gap:12,marginTop:16,padding:'12px 0',borderTop:'1px solid #f0f0f0'}}>
-          <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={S.qtyBtn}>−</button>
-          <span style={{fontSize:18,fontWeight:700,minWidth:24,textAlign:'center'}}>{qty}</span>
-          <button onClick={()=>setQty(q=>q+1)} style={S.qtyBtn}>+</button>
-          <span style={{marginLeft:'auto',fontSize:20,fontWeight:800}}>{fmt(total)}</span>
-        </div>
       </div>
-      <div style={{position:'sticky',bottom:0,background:'#fff',padding:'12px 16px',borderTop:'1px solid #f0f0f0',display:'flex',gap:10}}>
-        <button style={{width:46,height:46,borderRadius:50,border:'1.5px solid #ddd',background:'#fff',fontSize:20,cursor:'pointer',color:'#e53935'}}>♡</button>
+      </div>
+      {/* 하단 고정 액션바 */}
+      <div style={{flexShrink:0,background:'#fff',padding:'10px 16px',borderTop:'1px solid #f0f0f0',display:'flex',gap:10,alignItems:'center'}}>
+        <button style={{width:46,height:46,borderRadius:50,border:'1.5px solid #ddd',background:'#fff',fontSize:20,cursor:'pointer',color:'#e53935',flexShrink:0}}>♡</button>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+          <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:32,height:32,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:'pointer',color:'#333',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+          <span style={{fontSize:15,fontWeight:700,minWidth:20,textAlign:'center'}}>{qty}</span>
+          <button onClick={()=>setQty(q=>q+1)} style={{width:32,height:32,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:'pointer',color:'#333',display:'flex',alignItems:'center',justifyContent:'center'}}>＋</button>
+        </div>
         <button onClick={onBack} style={{flex:1,height:46,borderRadius:24,border:'1.5px solid #ddd',background:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',color:'#333'}}>닫기</button>
-        <button onClick={()=>onAddToCart({drink,selectedSize:selSz,optionChoices:opts,qty,totalPrice:total})} style={{flex:2,height:46,borderRadius:24,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>담기</button>
+        <button onClick={()=>onAddToCart({drink,selectedSize:selSz,optionChoices:opts,qty,totalPrice:total})} style={{flex:2,height:46,borderRadius:24,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>담기 {fmt(total)}</button>
       </div>
     </div>
   );
@@ -788,7 +804,7 @@ function OrderCard({ order, compact }) {
 }
 
 // ─── ADMIN ────────────────────────────────────────────────────
-function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, onEdit, onNew, onDelete, onToggleCat, onUpdateCat, onAddCat, onSaveSettings }) {
+function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, onEdit, onNew, onDelete, onToggleCat, onUpdateCat, onAddCat, onSaveSettings, onReorder, onToggleVisible }) {
   return (
     <div style={S.screen}>
       <div style={S.navBar}>
@@ -802,8 +818,8 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
         ))}
       </div>
       <div style={{flex:1,overflowY:'auto',minHeight:0}}>
-        {activeTab==="drinks"     && <DrinksTab drinks={drinks} onEdit={onEdit} onDelete={onDelete} />}
-        {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} onAdd={onAddCat} />}
+        {activeTab==="drinks"     && <DrinksTab drinks={drinks} onEdit={onEdit} onNew={onNew} onDelete={onDelete} onReorder={onReorder} onToggleVisible={onToggleVisible} />}
+        {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} onAdd={onAddCat} onReorder={newCats=>setCats(newCats)} />}
         {activeTab==="orders"     && <AdminOrdersTab />}
         {activeTab==="settings"   && <SettingsTab settings={settings} onSave={onSaveSettings} />}
       </div>
@@ -811,7 +827,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
   );
 }
 
-function DrinksTab({ drinks, onEdit, onDelete }) {
+function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible }) {
   const [confirm,setConfirm]=useState(null);
   return (
     <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
@@ -861,7 +877,7 @@ function NewCatForm({ onAdd }) {
   );
 }
 
-function CategoriesTab({ cats, onToggle, onUpdate, onAdd }) {
+function CategoriesTab({ cats, onToggle, onUpdate, onAdd, onReorder }) {
   const [editing,setEditing]=useState(null);
   const [ef,setEf]=useState({label:'',icon:''});
   return (
@@ -869,8 +885,13 @@ function CategoriesTab({ cats, onToggle, onUpdate, onAdd }) {
       <div style={{fontSize:13,color:'#555',lineHeight:1.6,padding:'10px 14px',background:'#f0faf4',borderRadius:12,marginBottom:16,borderLeft:`3px solid ${P}`}}>💡 이름·아이콘 수정 및 노출 여부 설정</div>
       {/* 새 카테고리 추가 */}
       <NewCatForm onAdd={onAdd} />
-      {cats.map(cat=>(
-        <div key={cat.id} style={{borderBottom:'1px solid #f5f5f5'}}>
+      {cats.map((cat,ci)=>(
+        <div key={cat.id} style={{borderBottom:'1px solid #f5f5f5',display:'flex',alignItems:'stretch'}}>
+          <div style={{display:'flex',flexDirection:'column',justifyContent:'center',gap:2,padding:'8px 4px 8px 0',flexShrink:0}}>
+            <button onClick={()=>{ if(ci>0){const a=[...cats];[a[ci-1],a[ci]]=[a[ci],a[ci-1]];onReorder(a);} }} disabled={ci===0} style={{width:24,height:24,border:'1px solid #ddd',borderRadius:5,background:ci===0?'#f9f9f9':'#fff',cursor:ci===0?'default':'pointer',fontSize:11,color:ci===0?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↑</button>
+            <button onClick={()=>{ if(ci<cats.length-1){const a=[...cats];[a[ci],a[ci+1]]=[a[ci+1],a[ci]];onReorder(a);} }} disabled={ci===cats.length-1} style={{width:24,height:24,border:'1px solid #ddd',borderRadius:5,background:ci===cats.length-1?'#f9f9f9':'#fff',cursor:ci===cats.length-1?'default':'pointer',fontSize:11,color:ci===cats.length-1?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↓</button>
+          </div>
+          <div style={{flex:1}}>
           {editing===cat.id?(
             <div style={{padding:'14px 0'}}>
               <div style={{display:'flex',gap:8,marginBottom:10}}>
@@ -1077,6 +1098,29 @@ function EmojiPicker({ value, onChange }) {
   return <IconPicker value={value} onChange={onChange} placeholder='🏫' />;
 }
 
+function TextStyleBar({ label, value={}, onChange }) {
+  const upd = (k,v) => onChange({...value,[k]:v});
+  return (
+    <div style={{marginBottom:16}}>
+      <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:6}}>{label}</div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+        <button onClick={()=>upd('bold',!value.bold)} style={{width:34,height:34,borderRadius:8,border:`1.5px solid ${value.bold?P:'#ddd'}`,background:value.bold?PLIGHT:'#fff',fontWeight:800,fontSize:14,cursor:'pointer',color:value.bold?P:'#555'}}>B</button>
+        <button onClick={()=>upd('italic',!value.italic)} style={{width:34,height:34,borderRadius:8,border:`1.5px solid ${value.italic?P:'#ddd'}`,background:value.italic?PLIGHT:'#fff',fontStyle:'italic',fontWeight:700,fontSize:14,cursor:'pointer',color:value.italic?P:'#555'}}>I</button>
+        <button onClick={()=>upd('underline',!value.underline)} style={{width:34,height:34,borderRadius:8,border:`1.5px solid ${value.underline?P:'#ddd'}`,background:value.underline?PLIGHT:'#fff',textDecoration:'underline',fontWeight:700,fontSize:14,cursor:'pointer',color:value.underline?P:'#555'}}>U</button>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <button onClick={()=>upd('size',Math.max(8,(value.size||14)-1))} style={{width:28,height:34,borderRadius:8,border:'1px solid #ddd',background:'#fff',cursor:'pointer',fontSize:14,color:'#555'}}>−</button>
+          <span style={{fontSize:13,fontWeight:700,minWidth:28,textAlign:'center'}}>{value.size||14}px</span>
+          <button onClick={()=>upd('size',Math.min(40,(value.size||14)+1))} style={{width:28,height:34,borderRadius:8,border:'1px solid #ddd',background:'#fff',cursor:'pointer',fontSize:14,color:'#555'}}>+</button>
+        </div>
+        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+          <input type="color" value={value.color||'#ffffff'} onChange={e=>upd('color',e.target.value)} style={{width:34,height:34,border:'1px solid #ddd',borderRadius:8,cursor:'pointer',padding:2}} />
+          <button onClick={()=>upd('color','')} style={{padding:'4px 8px',border:'1px solid #ddd',borderRadius:8,background:'#f5f5f5',fontSize:11,cursor:'pointer',color:'#666'}}>기본</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsTab({ settings, onSave }) {
   const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15});
   const [saved,setSaved]=useState(false);
@@ -1131,10 +1175,13 @@ function SettingsTab({ settings, onSave }) {
         <div style={{fontSize:12,color:'#888',marginBottom:10}}>홈 화면 배너의 문구와 이미지를 설정합니다</div>
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>서비스 라벨 (배너 상단 작은 글씨)</div>
         <input value={form.banner?.serviceLabel||''} onChange={e=>upBanner('serviceLabel',e.target.value)} placeholder="음료 주문 서비스" style={S.input} />
+        <TextStyleBar label="서비스 라벨 스타일" value={form.banner?.serviceLabelStyle||{}} onChange={v=>upBanner('serviceLabelStyle',v)} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>헤드라인 문구</div>
         <input value={form.banner?.headline||''} onChange={e=>upBanner('headline',e.target.value)} placeholder="음료를 주문하세요 🍹" style={S.input} />
+        <TextStyleBar label="헤드라인 스타일" value={form.banner?.headlineStyle||{}} onChange={v=>upBanner('headlineStyle',v)} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>서브 문구</div>
         <input value={form.banner?.subtext||''} onChange={e=>upBanner('subtext',e.target.value)} placeholder="매일 신선하게 준비됩니다" style={S.input} />
+        <TextStyleBar label="서브 문구 스타일" value={form.banner?.subtextStyle||{}} onChange={v=>upBanner('subtextStyle',v)} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:6}}>배너 이미지</div>
         {form.banner?.image&&(
           <div style={{marginBottom:8,position:'relative'}}>
@@ -1364,6 +1411,20 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
         <input placeholder="가격 (원) *" type="number" value={form.price} onChange={e=>upd('price',e.target.value)} style={S.input} />
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>카테고리</div>
         <select value={form.categoryId} onChange={e=>upd('categoryId',e.target.value)} style={S.input}>{cats.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select>
+        {/* 하루 판매 한도 */}
+        <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>하루 판매 한도</div>
+        <div style={{background:'#f8f8f8',borderRadius:12,padding:12,marginBottom:12}}>
+          <div style={{fontSize:12,color:'#555',marginBottom:8}}>0 = 무제한 / 숫자 입력 시 하루 해당 잔수로 제한</div>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <button onClick={()=>upd('dailyMax',Math.max(0,(form.dailyMax||0)-1))} style={{width:36,height:36,borderRadius:50,border:'1.5px solid #ddd',background:'#fff',cursor:'pointer',fontSize:18,color:'#555'}}>−</button>
+            <div style={{flex:1,textAlign:'center'}}>
+              <span style={{fontSize:28,fontWeight:800,color:form.dailyMax>0?P:'#aaa'}}>{form.dailyMax||0}</span>
+              <span style={{fontSize:13,color:'#888'}}> 잔/일</span>
+            </div>
+            <button onClick={()=>upd('dailyMax',(form.dailyMax||0)+1)} style={{width:36,height:36,borderRadius:50,border:'1.5px solid #ddd',background:'#fff',cursor:'pointer',fontSize:18,color:'#555'}}>+</button>
+          </div>
+          {form.dailyMax>0&&<div style={{fontSize:11,color:P,marginTop:6,textAlign:'center'}}>하루 {form.dailyMax}잔 판매 후 자동 품절</div>}
+        </div>
         {/* 추천 카테고리 표시 */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:'#f8f8f8',borderRadius:12,marginBottom:12}}>
           <div>
@@ -1374,7 +1435,12 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
             <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.featured?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
           </button>
         </div>
-        <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>태그</div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0 8px'}}>
+          <span style={{fontSize:15,fontWeight:700}}>태그</span>
+          <button onClick={()=>upd('tagsEnabled',form.tagsEnabled!==false?false:true)} style={{fontSize:12,padding:'4px 10px',border:`1px solid ${form.tagsEnabled!==false?P:'#ddd'}`,borderRadius:12,background:form.tagsEnabled!==false?PLIGHT:'#f5f5f5',color:form.tagsEnabled!==false?P:'#888',cursor:'pointer',fontWeight:600}}>
+            {form.tagsEnabled!==false?'✅ 태그 활성':'⛔ 태그 비활성'}
+          </button>
+        </div>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
           <button onClick={()=>upd('tags',form.tags.includes('BEST')?form.tags.filter(t=>t!=='BEST'):[...form.tags,'BEST'])} style={{padding:'6px 18px',border:`1.5px solid ${form.tags.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#ddd'}`,borderRadius:20,background:form.tags.includes('BEST')?(form.tagStyle?.bg||'#fff3e0'):'#fff',color:form.tags.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#666',fontSize:13,cursor:'pointer',fontWeight:700}}>
             {form.tagLabel||'BEST'}
