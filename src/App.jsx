@@ -511,7 +511,7 @@ function ListScreen({ category, drinks, onBack, onSelect, cartCount, onCart }) {
           <button key={d.id} onClick={()=>!isSoldOut(d)&&onSelect(d)} style={{width:'100%',background:'none',border:'none',borderBottom:'1px solid #f5f5f5',display:'flex',alignItems:'center',padding:'14px 16px',cursor:isSoldOut(d)?'not-allowed':'pointer',gap:14,textAlign:'left',color:'#111',opacity:isSoldOut(d)?0.5:1}}>
             <DrinkImg src={d.image} alt={d.name} style={{width:80,height:80,borderRadius:50,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} />
             <div style={{flex:1}}>
-              <div style={{display:'flex',gap:4,marginBottom:4}}>{d.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:d.tagStyle?.bg||'#fff3e0',color:d.tagStyle?.text||'#e65100'}}>{d.tagLabel||t}</span>)}</div>
+              {d.tagsEnabled!==false&&d.tags?.length>0&&<div style={{display:'flex',gap:4,marginBottom:4}}>{d.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:d.tagStyle?.bg||'#fff3e0',color:d.tagStyle?.text||'#e65100'}}>{d.tagLabel||t}</span>)}</div>}
               <div style={{fontSize:15,fontWeight:700,color:'#111'}}>{d.name}</div>
               <div style={{fontSize:12,color:'#999',marginTop:1}}>{d.nameEn}</div>
               <div style={{fontSize:14,fontWeight:700,color:P,marginTop:4}}>{fmt(d.price)}</div>
@@ -538,7 +538,7 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
         <DrinkImg src={drink.image} alt={drink.name} style={{width:180,height:180,objectFit:'cover',borderRadius:20}} />
       </div>
       <div style={{padding:'16px 20px'}}>
-        <div style={{display:'flex',gap:4,marginBottom:6}}>{drink.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:drink.tagStyle?.bg||'#fff3e0',color:drink.tagStyle?.text||'#e65100'}}>{drink.tagLabel||t}</span>)}</div>
+        {drink.tagsEnabled!==false&&drink.tags?.length>0&&<div style={{display:'flex',gap:4,marginBottom:6}}>{drink.tags.map(t=><span key={t} style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:drink.tagStyle?.bg||'#fff3e0',color:drink.tagStyle?.text||'#e65100'}}>{drink.tagLabel||t}</span>)}</div>}
         <div style={{fontSize:22,fontWeight:800}}>{drink.name}</div>
         <div style={{fontSize:13,color:'#999',marginTop:2}}>{drink.nameEn}</div>
         <div style={{fontSize:13,color:'#666',marginTop:8,lineHeight:1.55}}>{drink.description}</div>
@@ -832,12 +832,28 @@ function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible
   return (
     <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
       {drinks.length===0&&<div style={S.empty}>등록된 음료가 없습니다</div>}
-      {drinks.map(d=>(
-        <div key={d.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid #f5f5f5'}}>
-          <DrinkImg src={d.image} alt="" style={{width:60,height:60,borderRadius:12,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} />
-          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div><div style={{fontSize:12,color:'#888'}}>{fmt(d.price)} · 옵션 {d.options.length}개</div></div>
-          <button onClick={()=>onEdit(d)} style={S.editBtn}>수정</button>
-          <button onClick={()=>setConfirm(d.id)} style={S.delBtn}>삭제</button>
+      {drinks.map((d,di)=>(
+        <div key={d.id} style={{display:'flex',alignItems:'center',gap:6,padding:'10px 0',borderBottom:'1px solid #f5f5f5',opacity:d.visible===false?0.4:1}}>
+          {/* 순서 ↑↓ */}
+          <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>
+            <button onClick={()=>{if(di>0){const a=[...drinks];[a[di-1],a[di]]=[a[di],a[di-1]];onReorder(a);}}} disabled={di===0} style={{width:24,height:24,border:'1px solid #ddd',borderRadius:5,background:di===0?'#f5f5f5':'#fff',cursor:di===0?'default':'pointer',fontSize:10,color:di===0?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↑</button>
+            <button onClick={()=>{if(di<drinks.length-1){const a=[...drinks];[a[di],a[di+1]]=[a[di+1],a[di]];onReorder(a);}}} disabled={di===drinks.length-1} style={{width:24,height:24,border:'1px solid #ddd',borderRadius:5,background:di===drinks.length-1?'#f5f5f5':'#fff',cursor:di===drinks.length-1?'default':'pointer',fontSize:10,color:di===drinks.length-1?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↓</button>
+          </div>
+          <DrinkImg src={d.image} alt="" style={{width:50,height:50,borderRadius:10,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} />
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div>
+            <div style={{fontSize:11,color:'#888',display:'flex',gap:4,marginTop:2}}>
+              <span>{d.sizes?.[0]?.price?.toLocaleString()}원~</span>
+              {d.dailyMax>0&&<span style={{color:'#1565c0'}}>일{d.dailyMax}잔</span>}
+              {d.tagsEnabled!==false&&d.tags?.length>0&&<span style={{color:'#e65100'}}>{d.tagLabel||d.tags[0]}</span>}
+            </div>
+          </div>
+          {/* 숨김 토글 */}
+          <button onClick={()=>onToggleVisible(d.id)} title={d.visible===false?'숨김 중 (클릭시 표시)':'표시 중 (클릭시 숨김)'} style={{width:32,height:32,borderRadius:8,border:`1px solid ${d.visible===false?'#ffcdd2':'#c8e6c9'}`,background:d.visible===false?'#ffebee':'#e8f5e9',cursor:'pointer',fontSize:15,flexShrink:0}}>
+            {d.visible===false?'🙈':'👁️'}
+          </button>
+          <button onClick={()=>onEdit(d)} style={{...S.editBtn,flexShrink:0}}>수정</button>
+          <button onClick={()=>setConfirm(d.id)} style={{...S.delBtn,flexShrink:0}}>삭제</button>
         </div>
       ))}
       {confirm&&<div style={S.overlay}><div style={{background:'#fff',borderRadius:20,padding:24,width:260,margin:'auto'}}><div style={{fontWeight:700,textAlign:'center',marginBottom:4}}>음료를 삭제할까요?</div><div style={{fontSize:13,color:'#888',textAlign:'center',marginBottom:20}}>삭제 후 복구할 수 없습니다</div><div style={{display:'flex',gap:10}}><button onClick={()=>setConfirm(null)} style={{flex:1,height:44,borderRadius:22,border:'1px solid #ddd',background:'#f5f5f5',cursor:'pointer',fontWeight:600,color:'#333'}}>취소</button><button onClick={()=>{onDelete(confirm);setConfirm(null);}} style={{flex:1,height:44,borderRadius:22,border:'2px solid #e53935',background:'#fff0f0',color:'#c62828',fontWeight:700,cursor:'pointer'}}>삭제</button></div></div></div>}
