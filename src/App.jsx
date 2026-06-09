@@ -911,6 +911,7 @@ function CategoriesTab({ cats, onToggle, onUpdate, onAdd, onReorder }) {
               <Tog on={cat.visible} color={P} onChange={()=>onToggle(cat.id)} />
             </div>
           )}
+          </div>
         </div>
       ))}
     </div>
