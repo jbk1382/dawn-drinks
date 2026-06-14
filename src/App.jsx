@@ -134,19 +134,24 @@ async function getDailyCount() {
 async function getDrinkDailyCount(drinkId) {
   const d = await getDailyData(); return (d.drinkCounts||{})[drinkId]||0;
 }
-async function incrementDailyCount(qty, cart) {
+async function incrementDailyCount(qty, cart, deliveryTime) {
   try {
     const k = getTodayKey();
     const snap = await getDoc(doc(db,'daily',k));
-    const cur = snap.exists() ? snap.data() : {count:0, drinkCounts:{}};
+    const cur = snap.exists() ? snap.data() : {count:0, drinkCounts:{}, slotCounts:{}};
     const drinkCounts = {...(cur.drinkCounts||{})};
     if(cart) cart.forEach(item=>{
       const id = item.drink.id||item.drink.name;
       drinkCounts[id] = (drinkCounts[id]||0) + item.qty;
     });
-    await setDoc(doc(db,'daily',k), {count:(cur.count||0)+qty, drinkCounts, date:k});
+    const slotCounts = {...(cur.slotCounts||{})};
+    if(deliveryTime) slotCounts[deliveryTime] = (slotCounts[deliveryTime]||0)+1;
+    await setDoc(doc(db,'daily',k), {count:(cur.count||0)+qty, drinkCounts, slotCounts, date:k});
     return (cur.count||0)+qty;
   } catch { return -1; }
+}
+async function getSlotCounts() {
+  const d = await getDailyData(); return d.slotCounts||{};
 }
 function getMonthKey(name) {
   const n=new Date(); return `hb_mon:${name}:${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
@@ -273,6 +278,7 @@ const INIT_SETTINGS = {
   deliveryHours: INIT_DH,
   adminPassword: "admin1234",
   dailyLimit: 15,
+  slotLimit: 3,
 };
 
 // ─── APP ──────────────────────────────────────────────────────
@@ -310,6 +316,7 @@ export default function App() {
           adminPassword: stored.adminPassword || INIT_SETTINGS.adminPassword,
           themeId: stored.themeId || INIT_SETTINGS.themeId,
           dailyLimit: stored.dailyLimit ?? INIT_SETTINGS.dailyLimit,
+          slotLimit: stored.slotLimit ?? INIT_SETTINGS.slotLimit,
         }));
         if (storedDrinks) setDrinks(storedDrinks);
         if (storedCats) setCats(storedCats);
@@ -351,7 +358,7 @@ export default function App() {
     const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료" };
     await pushOrder(userName, order);
     addMonthlyTotal(info.name||userName, cartTotal); // 월 사용금액 누적
-    await incrementDailyCount(newDrinkQty, cart); // 하루 잔수 누적
+    await incrementDailyCount(newDrinkQty, cart, info.deliveryTime); // 하루 잔수 누적
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
     if (settings.telegram.enabled && settings.telegram.token) await sendTelegram(settings.telegram.token, settings.telegram.chatId, msg);
     if (settings.kakao.enabled && settings.kakao.accessToken) await sendKakao(settings.kakao.accessToken, msg);
@@ -367,7 +374,7 @@ export default function App() {
   return (
     <div style={S.shell}>
       <div style={S.phone}>
-        {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} />}
+        {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} deliveryHours={settings.deliveryHours} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(d.visible===false) return false; if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
@@ -375,7 +382,7 @@ export default function App() {
         {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} onReorder={setDrinks} onToggleVisible={id=>setDrinks(p=>p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d))} />}
         {screen==="adminEdit"&& <AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{setDrinks(p=>d.id?p.map(x=>x.id===d.id?d:x):[...p,{...d,id:Date.now()}]);notify("저장됨 ✅");setScreen("admin");}} />}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
-        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
+        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
         {toast && <div style={S.toast}>{toast}</div>}
         {!["detail","adminEdit"].includes(screen) && (()=>{
           const dlimit=settings.dailyLimit??15;
@@ -443,7 +450,7 @@ function LoginScreen({ onLogin }) {
 }
 
 // ─── HOME ─────────────────────────────────────────────────────
-function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, onCart, userName, onHistory, dailyLimit=15 }) {
+function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, onCart, userName, onHistory, dailyLimit=15, deliveryHours={} }) {
   const icon = school?.icon || '🏫';
   const schoolName = school?.name || '학교 음료 주문';
   const nameColor = school?.nameColor || P;
@@ -475,10 +482,32 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
         </div>
       </div>
 
-      <button onClick={onHistory} style={{margin:'0 16px 12px',padding:'11px 16px',background:'#f0faf4',border:`1px solid ${P}30`,borderRadius:12,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',width:'calc(100% - 32px)'}}>
+      <button onClick={onHistory} style={{margin:'0 16px 8px',padding:'11px 16px',background:'#f0faf4',border:`1px solid ${P}30`,borderRadius:12,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',width:'calc(100% - 32px)'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}><span>📋</span><span style={{fontSize:14,fontWeight:600,color:P}}>내 주문 내역 보기</span></div>
         <span style={{color:'#555',fontSize:18}}>›</span>
       </button>
+      {/* 요일별 운영시간 */}
+      {(()=>{
+        const now=new Date(); const dow=now.getDay();
+        const WDAY=['일','월','화','수','목','금','토'];
+        const todayCfg=deliveryHours[dow]||{};
+        return (
+          <div style={{margin:'0 16px 12px',padding:'10px 14px',background:todayCfg.enabled?PLIGHT:'#f5f5f5',borderRadius:12,border:`1px solid ${todayCfg.enabled?P+'40':'#e0e0e0'}`}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+              <span style={{fontSize:12,fontWeight:700,color:todayCfg.enabled?P:'#999'}}>🕐 오늘({WDAY[dow]}요일) 운영 시간</span>
+              <span style={{fontSize:12,fontWeight:800,color:todayCfg.enabled?P:'#aaa'}}>{todayCfg.enabled?`${todayCfg.start} ~ ${todayCfg.end}`:'휴무'}</span>
+            </div>
+            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+              {WDAY.map((w,i)=>{ const cfg=deliveryHours[i]||{}; return (
+                <div key={i} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'4px 8px',borderRadius:8,background:i===dow?(cfg.enabled?P:'#bbb'):(cfg.enabled?'#fff':'#f0f0f0'),border:`1px solid ${i===dow?(cfg.enabled?P:'#bbb'):(cfg.enabled?P+'30':'#e8e8e8')}`}}>
+                  <span style={{fontSize:11,fontWeight:700,color:i===dow?'#fff':(cfg.enabled?P:'#bbb')}}>{w}</span>
+                  <span style={{fontSize:9,color:i===dow?'rgba(255,255,255,0.85)':(cfg.enabled?'#666':'#bbb')}}>{cfg.enabled?cfg.start:'휴무'}</span>
+                </div>
+              ); })}
+            </div>
+          </div>
+        );
+      })()}
 
       <div style={{padding:'4px 20px 10px',fontSize:15,fontWeight:700,color:'#222'}}>카테고리</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,padding:'0 16px 10px'}}>
@@ -634,7 +663,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, onCanc
   const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:`${date.tag} ${date.label}`,deliveryTime:time,isTakeout}); setLoading(false); };
   const monthlyUsed = getMonthlyTotal(name||userName);
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
-  const canOrder=!!time&&dayEnabled&&dailyRemain>0&&monthlyRemain>0;
+  const canOrder=!!time&&dayEnabled&&dailyRemain>0&&monthlyRemain>0&&!isSlotFull(time);
   return (
     <div style={S.overlay}>
       <div style={{background:'#fff',borderRadius:'22px 22px 0 0',padding:'16px 20px 32px',position:'absolute',bottom:0,left:0,right:0,maxHeight:'90%',overflowY:'auto'}}>
@@ -671,15 +700,23 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, onCanc
          : <div style={{marginBottom:14}}>
              {/* 시간대 그룹 선택 */}
              <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}}>
-               {[...new Set(slots.map(t=>t.split(':')[0]))].map(h=>(
-                 <button key={h} onClick={()=>{ const first=slots.find(t=>t.startsWith(h+':')); if(first) setTime(first); }} style={{padding:'5px 12px',border:`1.5px solid ${time?.startsWith(h+':')?P:'#e0e0e0'}`,borderRadius:20,background:time?.startsWith(h+':')?P:'#fff',color:time?.startsWith(h+':')?'#fff':'#555',fontSize:12,fontWeight:700,cursor:'pointer'}}>{h}시</button>
-               ))}
+               {[...new Set(slots.map(s=>s.split(':')[0]))].map(h=>{
+                 const hourSlots=slots.filter(s=>s.startsWith(h+':'));
+                 const allFull=hourSlots.every(s=>isSlotFull(s));
+                 return <button key={h} onClick={()=>{ const first=hourSlots.find(s=>!isSlotFull(s)); if(first) setTime(first); }} disabled={allFull} style={{padding:'5px 12px',border:`1.5px solid ${allFull?'#eee':time?.startsWith(h+':')?P:'#e0e0e0'}`,borderRadius:20,background:allFull?'#f5f5f5':time?.startsWith(h+':')?P:'#fff',color:allFull?'#bbb':time?.startsWith(h+':')?'#fff':'#555',fontSize:12,fontWeight:700,cursor:allFull?'not-allowed':'pointer'}}>
+                   {h}시{allFull?'(마감)':''}
+                 </button>;
+               })}
              </div>
              {/* 선택된 시간대의 분 선택 */}
              {time&&<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-               {slots.filter(t=>t.startsWith(time.split(':')[0]+':')).map(t=>(
-                 <button key={t} onClick={()=>setTime(t)} style={{padding:'6px 14px',border:`1.5px solid ${time===t?P:'#e0e0e0'}`,borderRadius:20,background:time===t?P:'#fff',color:time===t?'#fff':'#555',fontSize:13,fontWeight:time===t?700:400,cursor:'pointer'}}>{t}</button>
-               ))}
+               {slots.filter(s=>s.startsWith(time.split(':')[0]+':')).map(s=>{
+                 const full=isSlotFull(s); const remain=slotRemain(s);
+                 return <button key={s} onClick={()=>!full&&setTime(s)} disabled={full} style={{padding:'6px 12px',border:`1.5px solid ${full?'#eee':time===s?P:'#e0e0e0'}`,borderRadius:20,background:full?'#f5f5f5':time===s?P:'#fff',color:full?'#bbb':time===s?'#fff':'#555',fontSize:12,fontWeight:time===s?700:400,cursor:full?'not-allowed':'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                   <span>{s}</span>
+                   <span style={{fontSize:9,opacity:0.8}}>{full?'마감':`${remain}자리`}</span>
+                 </button>;
+               })}
              </div>}
            </div>}
         {time&&dayEnabled&&<div style={{background:'#f0faf4',borderRadius:12,padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📅</span><div><div style={{fontSize:12,color:'#888'}}>선택된 배달 일시</div><div style={{fontSize:14,fontWeight:700,color:P}}>{date.tag} {date.label} {time}</div></div></div>}
@@ -1150,7 +1187,7 @@ function TextStyleBar({ label, value={}, onChange }) {
 }
 
 function SettingsTab({ settings, onSave }) {
-  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15});
+  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15,slotLimit:settings.slotLimit??3});
   const [saved,setSaved]=useState(false);
   const [testing,setTesting]=useState(null);
   const [testResult,setTestResult]=useState(null);
@@ -1346,6 +1383,26 @@ function SettingsTab({ settings, onSave }) {
             </div>
           );
         })()}
+      </div>
+
+      {/* 10분 슬롯당 주문 건수 */}
+      <SH>⏱️ 10분당 최대 주문 건수</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{fontSize:13,color:'#555',marginBottom:12}}>같은 배달 시간(10분 슬롯)에 받을 수 있는 최대 주문 건수</div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={()=>setForm(p=>({...p,slotLimit:Math.max(1,(p.slotLimit??3)-1)}))} style={{width:40,height:40,borderRadius:50,border:`1.5px solid ${P}`,background:'#fff',cursor:'pointer',fontSize:20,color:P,fontWeight:700}}>－</button>
+          <div style={{flex:1,textAlign:'center'}}>
+            <div style={{fontSize:36,fontWeight:800,color:P}}>{form.slotLimit??3}</div>
+            <div style={{fontSize:12,color:'#888'}}>건 / 10분</div>
+          </div>
+          <button onClick={()=>setForm(p=>({...p,slotLimit:Math.min(20,(p.slotLimit??3)+1)}))} style={{width:40,height:40,borderRadius:50,border:`1.5px solid ${P}`,background:'#fff',cursor:'pointer',fontSize:20,color:P,fontWeight:700}}>＋</button>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+          {[1,2,3,5,10,20].map(n=>(
+            <button key={n} onClick={()=>setForm(p=>({...p,slotLimit:n}))} style={{flex:1,minWidth:40,padding:'6px 0',border:`1.5px solid ${(form.slotLimit??3)===n?P:'#ddd'}`,borderRadius:20,background:(form.slotLimit??3)===n?P:'#fff',color:(form.slotLimit??3)===n?'#fff':'#555',fontSize:13,fontWeight:700,cursor:'pointer'}}>{n}건</button>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:'#888',marginTop:8}}>예: 3건 설정 시 10:30에 3건 주문 후 해당 시간 마감 표시</div>
       </div>
 
       {/* 비밀번호 변경 */}
