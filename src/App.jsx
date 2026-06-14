@@ -482,32 +482,10 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
         </div>
       </div>
 
-      <button onClick={onHistory} style={{margin:'0 16px 8px',padding:'11px 16px',background:'#f0faf4',border:`1px solid ${P}30`,borderRadius:12,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',width:'calc(100% - 32px)'}}>
+      <button onClick={onHistory} style={{margin:'0 16px 12px',padding:'11px 16px',background:'#f0faf4',border:`1px solid ${P}30`,borderRadius:12,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',width:'calc(100% - 32px)'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}><span>📋</span><span style={{fontSize:14,fontWeight:600,color:P}}>내 주문 내역 보기</span></div>
         <span style={{color:'#555',fontSize:18}}>›</span>
       </button>
-      {/* 요일별 운영시간 */}
-      {(()=>{
-        const now=new Date(); const dow=now.getDay();
-        const WDAY=['일','월','화','수','목','금','토'];
-        const todayCfg=deliveryHours[dow]||{};
-        return (
-          <div style={{margin:'0 16px 12px',padding:'10px 14px',background:todayCfg.enabled?PLIGHT:'#f5f5f5',borderRadius:12,border:`1px solid ${todayCfg.enabled?P+'40':'#e0e0e0'}`}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-              <span style={{fontSize:12,fontWeight:700,color:todayCfg.enabled?P:'#999'}}>🕐 오늘({WDAY[dow]}요일) 운영 시간</span>
-              <span style={{fontSize:12,fontWeight:800,color:todayCfg.enabled?P:'#aaa'}}>{todayCfg.enabled?`${todayCfg.start} ~ ${todayCfg.end}`:'휴무'}</span>
-            </div>
-            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-              {WDAY.map((w,i)=>{ const cfg=deliveryHours[i]||{}; return (
-                <div key={i} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'4px 8px',borderRadius:8,background:i===dow?(cfg.enabled?P:'#bbb'):(cfg.enabled?'#fff':'#f0f0f0'),border:`1px solid ${i===dow?(cfg.enabled?P:'#bbb'):(cfg.enabled?P+'30':'#e8e8e8')}`}}>
-                  <span style={{fontSize:11,fontWeight:700,color:i===dow?'#fff':(cfg.enabled?P:'#bbb')}}>{w}</span>
-                  <span style={{fontSize:9,color:i===dow?'rgba(255,255,255,0.85)':(cfg.enabled?'#666':'#bbb')}}>{cfg.enabled?cfg.start:'휴무'}</span>
-                </div>
-              ); })}
-            </div>
-          </div>
-        );
-      })()}
 
       <div style={{padding:'4px 20px 10px',fontSize:15,fontWeight:700,color:'#222'}}>카테고리</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,padding:'0 16px 10px'}}>
