@@ -1493,11 +1493,13 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
   const [form,setForm]=useState({...EMPTY,...(drink||{}), tags:Array.isArray(drink?.tags)?drink.tags:[], options:Array.isArray(drink?.options)?drink.options:[], sizes:Array.isArray(drink?.sizes)&&drink.sizes.length?drink.sizes:EMPTY.sizes });
   const [newOpt,setNewOpt]=useState({label:'',choices:''});
   const imgRef=useRef();
-  const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const upd=(k,v)=>setForm(p=>({...p,[k]:v??''}));
+  const updArr=(k,v)=>setForm(p=>({...p,[k]:Array.isArray(v)?v:[]}));
+  const updObj=(k,v)=>setForm(p=>({...p,[k]:v&&typeof v==='object'?v:{}}));
   const handleImg=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>upd('image',ev.target.result); r.readAsDataURL(f); };
   const addOpt=()=>{ if(!newOpt.label||!newOpt.choices)return; const choices=newOpt.choices.split(',').map(c=>c.trim()).filter(Boolean); upd('options',[...form.options,{id:Date.now().toString(),label:newOpt.label,choices,default:choices[0]}]); setNewOpt({label:'',choices:''}); };
   const moveOpt=(id,dir)=>{ const idx=form.options.findIndex(o=>o.id===id); if(dir==='up'&&idx===0) return; if(dir==='down'&&idx===(form.options||[]).length-1) return; const arr=[...form.options]; const ti=dir==='up'?idx-1:idx+1; [arr[idx],arr[ti]]=[arr[ti],arr[idx]]; upd('options',arr); };
-  const handleSave=()=>{ if(!form.name.trim()||!form.price){alert('이름과 가격을 입력해주세요');return;} onSave({...form,price:Number(form.price)}); };
+  const handleSave=()=>{ if(!(form.name||'').trim()||!form.price){alert('이름과 가격을 입력해주세요');return;} onSave({...form,price:Number(form.price)}); };
   return (
     <div style={{...S.screen,overflowY:'auto'}}>
       <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>{drink?'음료 수정':'음료 추가'}</span><button onClick={handleSave} style={S.newBtn}>저장</button></div>
@@ -1535,10 +1537,10 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
           </div>
         )}
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>기본 정보</div>
-        <input placeholder="음료 이름 (한국어) *" value={form.name} onChange={e=>upd('name',e.target.value)} style={S.input} />
-        <input placeholder="음료 이름 (영어)" value={form.nameEn} onChange={e=>upd('nameEn',e.target.value)} style={S.input} />
-        <input placeholder="간단한 설명" value={form.description} onChange={e=>upd('description',e.target.value)} style={S.input} />
-        <input placeholder="가격 (원) *" type="number" value={form.price} onChange={e=>upd('price',e.target.value)} style={S.input} />
+        <input placeholder="음료 이름 (한국어) *" value={form.name||''} onChange={e=>upd('name',e.target.value??'')} style={S.input} />
+        <input placeholder="음료 이름 (영어)" value={form.nameEn||''} onChange={e=>upd('nameEn',e.target.value??'')} style={S.input} />
+        <input placeholder="간단한 설명" value={form.description||''} onChange={e=>upd('description',e.target.value??'')} style={S.input} />
+        <input placeholder="가격 (원) *" type="number" value={form.price??''} onChange={e=>upd('price',e.target.value??'')} style={S.input} />
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>카테고리</div>
         <select value={form.categoryId} onChange={e=>upd('categoryId',e.target.value)} style={S.input}>{cats.map(c=><option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select>
         {/* 하루 판매 한도 */}
@@ -1581,7 +1583,7 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
           <div style={{background:'#f8f8f8',borderRadius:12,padding:12,marginBottom:10}}>
             <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:8}}>태그 커스터마이징</div>
             <div style={{display:'flex',gap:8,marginBottom:8}}>
-              <input placeholder="태그 글자 (예: NEW, HOT)" value={form.tagLabel||'BEST'} onChange={e=>upd('tagLabel',e.target.value)} style={{...S.input,flex:1,marginBottom:0,fontSize:13}} />
+              <input placeholder="태그 글자 (예: NEW, HOT)" value={form.tagLabel||'BEST'} onChange={e=>upd('tagLabel',e.target.value??'BEST')} style={{...S.input,flex:1,marginBottom:0,fontSize:13}} />
             </div>
             <div style={{display:'flex',gap:10,alignItems:'center'}}>
               <div style={{flex:1}}>
@@ -1604,9 +1606,9 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>컵 사이즈</div>
         {(form.sizes||[]).map((sz,i)=>(
           <div key={i} style={{display:'flex',gap:8,marginBottom:8,alignItems:'center'}}>
-            <input value={sz.label} onChange={e=>{const s=[...form.sizes];s[i]={...s[i],label:e.target.value};upd('sizes',s);}} style={{...S.input,width:60,marginBottom:0}} />
-            <input value={sz.ml} type="number" onChange={e=>{const s=[...form.sizes];s[i]={...s[i],ml:Number(e.target.value)};upd('sizes',s);}} style={{...S.input,flex:1,marginBottom:0}} placeholder="ml" />
-            <input value={sz.price} type="number" onChange={e=>{const s=[...form.sizes];s[i]={...s[i],price:Number(e.target.value)};upd('sizes',s);}} style={{...S.input,flex:1,marginBottom:0}} placeholder="+원" />
+            <input value={sz.label} onChange={e=>{const s=[...(form.sizes||[])];s[i]={...s[i],label:e.target.value??''};upd('sizes',s);}} style={{...S.input,width:60,marginBottom:0}} />
+            <input value={sz.ml} type="number" onChange={e=>{const s=[...(form.sizes||[])];s[i]={...s[i],ml:Number(e.target.value)||0};upd('sizes',s);}} style={{...S.input,flex:1,marginBottom:0}} placeholder="ml" />
+            <input value={sz.price} type="number" onChange={e=>{const s=[...(form.sizes||[])];s[i]={...s[i],price:Number(e.target.value)||0};upd('sizes',s);}} style={{...S.input,flex:1,marginBottom:0}} placeholder="+원" />
             <button onClick={()=>upd('sizes',form.sizes.filter((_,j)=>j!==i))} style={{...S.delBtn,padding:'8px'}}>✕</button>
           </div>
         ))}
