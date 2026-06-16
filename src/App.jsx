@@ -1272,7 +1272,8 @@ function SettingsTab({ settings, onSave }) {
         {[1,2,3,4,5,6,0].map(day=>{
           const cfg=form.deliveryHours[day]||{enabled:false,start:'10:30',end:'14:30'};
           return (
-            <div key={day} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 0',borderBottom:'1px solid #ececec'}}>
+            <div key={day} style={{borderBottom:'1px solid #ececec',paddingBottom:4}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,padding:'9px 0'}}>
               <div onClick={()=>upDH(day,'enabled',!cfg.enabled)} style={{width:44,height:24,borderRadius:12,background:cfg.enabled?P:'#ddd',position:'relative',cursor:'pointer',transition:'background 0.2s',flexShrink:0}}>
                 <div style={{width:20,height:20,borderRadius:10,background:'#fff',position:'absolute',top:2,left:cfg.enabled?22:2,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
               </div>
@@ -1288,7 +1289,7 @@ function SettingsTab({ settings, onSave }) {
                   </select>
                 </>
               ):<span style={{fontSize:12,color:'#bbb',flex:1}}>배달 없음</span>}
-            </div>
+              </div>
             {/* 슬롯 개별 활성/비활성 */}
             {cfg.enabled&&(()=>{
               const allSlots=getAllSlotsForDay(cfg);
@@ -1317,8 +1318,8 @@ function SettingsTab({ settings, onSave }) {
                 </div>
               );
             })()}
-          </div>
-        );
+            </div>
+          );
         })}
       </div>
 
