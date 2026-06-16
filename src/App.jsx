@@ -1,10 +1,28 @@
 import { useState, useEffect, useRef } from "react";
 import { db } from './firebase';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import React from 'react';
 
 let P = "#1a7a4a";
 let PLIGHT = "#f0faf4";
 let PGRAD = "#2ea76a"; // 전역 테마 색상들
+// ─── Error Boundary ────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props){super(props);this.state={hasError:false,error:null};}
+  static getDerivedStateFromError(e){return {hasError:true,error:e};}
+  componentDidCatch(e,i){console.error('Error:',e,i);}
+  render(){
+    if(this.state.hasError) return(
+      <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,gap:16}}>
+        <div style={{fontSize:36}}>⚠️</div>
+        <div style={{fontSize:15,fontWeight:700,color:'#333'}}>오류가 발생했습니다</div>
+        <div style={{fontSize:11,color:'#888',textAlign:'center'}}>{this.state.error?.message}</div>
+        <button onClick={()=>this.setState({hasError:false,error:null})} style={{padding:'10px 24px',border:'none',borderRadius:20,background:'#1a7a4a',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>돌아가기</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 const THEME_PRESETS = [
   {id:'green',   name:'에메랄드 🌿', P:'#1a7a4a', light:'#f0faf4', grad:'#2ea76a'},
   {id:'blue',    name:'오션 🌊',     P:'#1565c0', light:'#e3f2fd', grad:'#1976d2'},
@@ -383,7 +401,7 @@ export default function App() {
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
         {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} onReorder={setDrinks} onToggleVisible={id=>setDrinks(p=>p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d))} />}
-        {screen==="adminEdit"&& <AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{setDrinks(p=>d.id?p.map(x=>x.id===d.id?d:x):[...p,{...d,id:Date.now()}]);notify("저장됨 ✅");setScreen("admin");}} />}
+        {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{setDrinks(p=>d.id?p.map(x=>x.id===d.id?d:x):[...p,{...d,id:Date.now()}]);notify("저장됨 ✅");setScreen("admin");}} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
         {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
         {toast && <div style={S.toast}>{toast}</div>}
@@ -1478,7 +1496,7 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
   const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
   const handleImg=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>upd('image',ev.target.result); r.readAsDataURL(f); };
   const addOpt=()=>{ if(!newOpt.label||!newOpt.choices)return; const choices=newOpt.choices.split(',').map(c=>c.trim()).filter(Boolean); upd('options',[...form.options,{id:Date.now().toString(),label:newOpt.label,choices,default:choices[0]}]); setNewOpt({label:'',choices:''}); };
-  const moveOpt=(id,dir)=>{ const idx=form.options.findIndex(o=>o.id===id); if(dir==='up'&&idx===0) return; if(dir==='down'&&idx===form.options.length-1) return; const arr=[...form.options]; const ti=dir==='up'?idx-1:idx+1; [arr[idx],arr[ti]]=[arr[ti],arr[idx]]; upd('options',arr); };
+  const moveOpt=(id,dir)=>{ const idx=form.options.findIndex(o=>o.id===id); if(dir==='up'&&idx===0) return; if(dir==='down'&&idx===(form.options||[]).length-1) return; const arr=[...form.options]; const ti=dir==='up'?idx-1:idx+1; [arr[idx],arr[ti]]=[arr[ti],arr[idx]]; upd('options',arr); };
   const handleSave=()=>{ if(!form.name.trim()||!form.price){alert('이름과 가격을 입력해주세요');return;} onSave({...form,price:Number(form.price)}); };
   return (
     <div style={{...S.screen,overflowY:'auto'}}>
@@ -1554,12 +1572,12 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
           </button>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-          <button onClick={()=>upd('tags',form.tags.includes('BEST')?form.tags.filter(t=>t!=='BEST'):[...form.tags,'BEST'])} style={{padding:'6px 18px',border:`1.5px solid ${form.tags.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#ddd'}`,borderRadius:20,background:form.tags.includes('BEST')?(form.tagStyle?.bg||'#fff3e0'):'#fff',color:form.tags.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#666',fontSize:13,cursor:'pointer',fontWeight:700}}>
+          <button onClick={()=>upd('tags',form.tags?.includes('BEST')?form.tags.filter(t=>t!=='BEST'):[...form.tags,'BEST'])} style={{padding:'6px 18px',border:`1.5px solid ${form.tags?.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#ddd'}`,borderRadius:20,background:form.tags?.includes('BEST')?(form.tagStyle?.bg||'#fff3e0'):'#fff',color:form.tags?.includes('BEST')?(form.tagStyle?.text||'#e65100'):'#666',fontSize:13,cursor:'pointer',fontWeight:700}}>
             {form.tagLabel||'BEST'}
           </button>
-          {form.tags.includes('BEST')&&<span style={{fontSize:12,color:'#888'}}>← 미리보기</span>}
+          {form.tags?.includes('BEST')&&<span style={{fontSize:12,color:'#888'}}>← 미리보기</span>}
         </div>
-        {form.tags.includes('BEST')&&(
+        {form.tags?.includes('BEST')&&(
           <div style={{background:'#f8f8f8',borderRadius:12,padding:12,marginBottom:10}}>
             <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:8}}>태그 커스터마이징</div>
             <div style={{display:'flex',gap:8,marginBottom:8}}>
@@ -1584,7 +1602,7 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
           </div>
         )}
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>컵 사이즈</div>
-        {form.sizes.map((sz,i)=>(
+        {(form.sizes||[]).map((sz,i)=>(
           <div key={i} style={{display:'flex',gap:8,marginBottom:8,alignItems:'center'}}>
             <input value={sz.label} onChange={e=>{const s=[...form.sizes];s[i]={...s[i],label:e.target.value};upd('sizes',s);}} style={{...S.input,width:60,marginBottom:0}} />
             <input value={sz.ml} type="number" onChange={e=>{const s=[...form.sizes];s[i]={...s[i],ml:Number(e.target.value)};upd('sizes',s);}} style={{...S.input,flex:1,marginBottom:0}} placeholder="ml" />
@@ -1594,12 +1612,12 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
         ))}
         <button onClick={()=>upd('sizes',[...form.sizes,{label:'XL',ml:591,price:1000}])} style={S.addRowBtn}>+ 사이즈 추가</button>
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>퍼스널 옵션</div>
-        {form.options.map((opt,idx)=>(
+        {(form.options||[]).map((opt,idx)=>(
           <div key={opt.id} style={{background:'#f8f8f8',borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',gap:8}}>
             {/* 순서 조정 버튼 */}
             <div style={{display:'flex',flexDirection:'column',gap:3}}>
               <button onClick={()=>moveOpt(opt.id,'up')} disabled={idx===0} style={{width:26,height:26,border:'1px solid #ddd',borderRadius:6,background:idx===0?'#f5f5f5':'#fff',cursor:idx===0?'default':'pointer',fontSize:12,color:idx===0?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↑</button>
-              <button onClick={()=>moveOpt(opt.id,'down')} disabled={idx===form.options.length-1} style={{width:26,height:26,border:'1px solid #ddd',borderRadius:6,background:idx===form.options.length-1?'#f5f5f5':'#fff',cursor:idx===form.options.length-1?'default':'pointer',fontSize:12,color:idx===form.options.length-1?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↓</button>
+              <button onClick={()=>moveOpt(opt.id,'down')} disabled={idx===(form.options||[]).length-1} style={{width:26,height:26,border:'1px solid #ddd',borderRadius:6,background:idx===(form.options||[]).length-1?'#f5f5f5':'#fff',cursor:idx===(form.options||[]).length-1?'default':'pointer',fontSize:12,color:idx===(form.options||[]).length-1?'#ccc':'#555',display:'flex',alignItems:'center',justifyContent:'center'}}>↓</button>
             </div>
             <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{opt.label}</div><div style={{fontSize:12,color:'#888',marginTop:2}}>{opt.choices.join(' / ')}</div></div>
             <button onClick={()=>upd('options',form.options.filter(o=>o.id!==opt.id))} style={{...S.delBtn,padding:'4px 8px'}}>✕</button>
