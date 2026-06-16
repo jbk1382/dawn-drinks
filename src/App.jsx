@@ -1471,7 +1471,8 @@ function TestBadge({ result }) { return <div style={{marginTop:10,padding:'10px 
 
 // ─── ADMIN EDIT ───────────────────────────────────────────────
 function AdminEditScreen({ drink, cats, onBack, onSave }) {
-  const [form,setForm]=useState(drink||{name:'',nameEn:'',price:'',description:'',categoryId:'coffee',image:'',tags:[],sizes:[{label:'M',ml:355,price:0},{label:'L',ml:473,price:500}],options:[]});
+  const EMPTY = {name:'',nameEn:'',price:'',description:'',categoryId:(cats?.[0]?.id||'coffee'),image:'',imgMode:'url',tags:[],tagsEnabled:true,tagLabel:'BEST',tagStyle:{text:'#e65100',bg:'#fff3e0'},sizes:[{label:'M',ml:355,price:0},{label:'L',ml:473,price:500}],options:[],dailyMax:0,visible:true,featured:false};
+  const [form,setForm]=useState({...EMPTY,...(drink||{}), tags:Array.isArray(drink?.tags)?drink.tags:[], options:Array.isArray(drink?.options)?drink.options:[], sizes:Array.isArray(drink?.sizes)&&drink.sizes.length?drink.sizes:EMPTY.sizes });
   const [newOpt,setNewOpt]=useState({label:'',choices:''});
   const imgRef=useRef();
   const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
