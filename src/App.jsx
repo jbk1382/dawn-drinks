@@ -912,8 +912,14 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
 
 function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible, onSave }) {
   const [confirm,setConfirm]=useState(null);
+  const emptyCount=(drinks||[]).filter(d=>d&&!(d.name||'').trim()).length;
+  const cleanEmpty=()=>{ const kept=(drinks||[]).filter(d=>d&&(d.name||'').trim()); onReorder(kept); };
   return (
     <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
+      {emptyCount>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:'#fff0f0',border:'1px solid #ffcdd2',borderRadius:12,padding:'10px 14px',margin:'10px 0'}}>
+        <span style={{fontSize:12,color:'#c62828',fontWeight:600}}>이름 없는 빈 메뉴 {emptyCount}개</span>
+        <button onClick={cleanEmpty} style={{padding:'6px 12px',border:'none',borderRadius:16,background:'#e53935',color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>일괄 삭제</button>
+      </div>}
       {drinks.length===0&&<div style={S.empty}>등록된 음료가 없습니다</div>}
       {(drinks||[]).map((d,di)=>( d ? (
         <div key={d.id} style={{display:'flex',alignItems:'center',gap:6,padding:'10px 0',borderBottom:'1px solid #f5f5f5',opacity:d.visible===false?0.4:1}}>
@@ -924,7 +930,7 @@ function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible
           </div>
           <DrinkImg src={d.image} alt="" style={{width:50,height:50,borderRadius:10,objectFit:'cover',background:'#f5f5f5',flexShrink:0}} />
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div>
+            <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:(d.name||'').trim()?'#111':'#e53935'}}>{(d.name||'').trim()||'(이름 없는 메뉴)'}</div>
             <div style={{fontSize:11,color:'#888',display:'flex',gap:4,marginTop:2}}>
               <span>{d.sizes?.[0]?.price?.toLocaleString()}원~</span>
               {d.dailyMax>0&&<span style={{color:'#1565c0'}}>일{d.dailyMax}잔</span>}
