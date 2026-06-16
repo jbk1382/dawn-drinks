@@ -105,7 +105,20 @@ async function saveStoredSettings(s) {
   try { await setDoc(doc(db,'config','settings'),s); return true; } catch(e) { console.error('설정저장실패',e); return false; }
 }
 async function getStoredDrinks() {
-  try { const s=await getDoc(doc(db,'config','drinks')); return s.exists()?(s.data().list||null):null; } catch { return null; }
+  try {
+    const s=await getDoc(doc(db,'config','drinks'));
+    if(!s.exists()) return null;
+    const list = s.data().list||null;
+    if(!list) return null;
+    // base64 이미지 자동 정리 (1MB 초과 방지)
+    const hasBase64 = list.some(d=>d.image?.startsWith('data:'));
+    if(hasBase64) {
+      const clean = list.map(d=>({...d, image: d.image?.startsWith('data:')?'':d.image||''}));
+      try { await setDoc(doc(db,'config','drinks'),{list:clean}); } catch {}
+      return clean;
+    }
+    return list;
+  } catch { return null; }
 }
 async function saveStoredDrinks(list) {
   try {
@@ -926,7 +939,7 @@ function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible
           <button onClick={()=>setConfirm(d.id||di)} style={{...S.delBtn,flexShrink:0,minWidth:36}}>삭제</button>
         </div>
       ) : null))}
-      {confirm&&<div style={S.overlay}><div style={{background:'#fff',borderRadius:20,padding:24,width:260,margin:'auto'}}><div style={{fontWeight:700,textAlign:'center',marginBottom:4}}>음료를 삭제할까요?</div><div style={{fontSize:13,color:'#888',textAlign:'center',marginBottom:20}}>삭제 후 복구할 수 없습니다</div><div style={{display:'flex',gap:10}}><button onClick={()=>setConfirm(null)} style={{flex:1,height:44,borderRadius:22,border:'1px solid #ddd',background:'#f5f5f5',cursor:'pointer',fontWeight:600,color:'#333'}}>취소</button><button onClick={()=>{onDelete(confirm);setConfirm(null);}} style={{flex:1,height:44,borderRadius:22,border:'2px solid #e53935',background:'#fff0f0',color:'#c62828',fontWeight:700,cursor:'pointer'}}>삭제</button></div></div></div>}
+      {confirm!==null&&confirm!==undefined&&<div style={S.overlay}><div style={{background:'#fff',borderRadius:20,padding:24,width:260,margin:'auto'}}><div style={{fontWeight:700,textAlign:'center',marginBottom:4}}>음료를 삭제할까요?</div><div style={{fontSize:13,color:'#888',textAlign:'center',marginBottom:20}}>삭제 후 복구할 수 없습니다</div><div style={{display:'flex',gap:10}}><button onClick={()=>setConfirm(null)} style={{flex:1,height:44,borderRadius:22,border:'1px solid #ddd',background:'#f5f5f5',cursor:'pointer',fontWeight:600,color:'#333'}}>취소</button><button onClick={()=>{onDelete(confirm);setConfirm(null);}} style={{flex:1,height:44,borderRadius:22,border:'2px solid #e53935',background:'#fff0f0',color:'#c62828',fontWeight:700,cursor:'pointer'}}>삭제</button></div></div></div>}
     </div>
   );
 }
