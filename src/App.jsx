@@ -356,17 +356,15 @@ export default function App() {
       .catch(e => { clearTimeout(fallback); console.error('Boot error:',e); setBooting(false); });
   }, []);
 
-  // 음료·카테고리 변경 시 Firestore 자동 저장 (booting 완료 후에만)
+  // 음료·카테고리 변경 시 Firestore 자동 저장 (부팅 완료 후 + 실제 변경 시만)
+  const [drinksLoaded, setDrinksLoaded] = useState(false);
+  const [catsLoaded, setCatsLoaded] = useState(false);
   useEffect(() => {
-    if (!booting) {
-      saveStoredDrinks(drinks);
-    }
-  }, [drinks, booting]);
+    if (!booting && drinksLoaded) saveStoredDrinks(drinks);
+  }, [drinks]);
   useEffect(() => {
-    if (!booting) {
-      saveStoredCats(cats);
-    }
-  }, [cats, booting]);
+    if (!booting && catsLoaded) saveStoredCats(cats);
+  }, [cats]);
 
   const thm = getTheme(settings);
   P = thm.P; PLIGHT = thm.light; PGRAD = thm.grad; // 전역 테마 업데이트
@@ -418,7 +416,7 @@ export default function App() {
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
-        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} onReorder={setDrinks} onToggleVisible={id=>setDrinks(p=>p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d))} />}
+        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} />
         {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={async d=>{
   const updated = d.id ? drinks.map(x=>x.id===d.id?d:x) : [...drinks,{...d,id:Date.now().toString()}];
   setDrinks(updated);
@@ -878,13 +876,13 @@ function OrderCard({ order, compact }) {
 }
 
 // ─── ADMIN ────────────────────────────────────────────────────
-function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, onEdit, onNew, onDelete, onToggleCat, onUpdateCat, onAddCat, onSaveSettings, onReorder, onToggleVisible }) {
+function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, onEdit, onNew, onDelete, onToggleCat, onUpdateCat, onAddCat, onSaveSettings, onReorder, onToggleVisible, onSaveDrinks }) {
   return (
     <div style={S.screen}>
       <div style={S.navBar}>
         <button onClick={onBack} style={S.backBtn}>‹</button>
         <span style={S.navTitle}>관리자 메뉴</span>
-        {activeTab==="drinks"?<button onClick={onNew} style={S.newBtn}>+ 추가</button>:<span style={{width:50}}/>}
+        {activeTab==="drinks"?<div style={{display:'flex',gap:6}}><button onClick={onSave} style={{...S.iconBtn,background:P,color:'#fff',fontWeight:700,fontSize:12,padding:'6px 10px'}}>💾 저장</button><button onClick={onNew} style={S.newBtn}>+ 추가</button></div>:<span style={{width:50}}/>}
       </div>
       <div style={{display:'flex',borderBottom:'2px solid #f0f0f0',flexShrink:0}}>
         {[{id:"drinks",label:"🥤 음료"},{id:"categories",label:"📂 카테고리"},{id:"orders",label:"📊 주문현황"},{id:"settings",label:"⚙️ 설정"}].map(t=>(
@@ -892,8 +890,8 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
         ))}
       </div>
       <div style={{flex:1,overflowY:'auto',minHeight:0}}>
-        {activeTab==="drinks"     && <DrinksTab drinks={drinks} onEdit={onEdit} onNew={onNew} onDelete={onDelete} onReorder={onReorder} onToggleVisible={onToggleVisible} />}
-        {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} onAdd={onAddCat} onReorder={newCats=>setCats(newCats)} />}
+        {activeTab==="drinks"     && <DrinksTab drinks={drinks} onEdit={onEdit} onNew={onNew} onDelete={onDelete} onReorder={onReorder} onToggleVisible={onToggleVisible} onSave={onSaveDrinks} />}
+        {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} onAdd={onAddCat} onReorder={newCats=>{setCats(newCats);saveStoredCats(newCats);}} />}
         {activeTab==="orders"     && <AdminOrdersTab />}
         {activeTab==="settings"   && <SettingsTab settings={settings} onSave={onSaveSettings} />}
       </div>
@@ -901,7 +899,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
   );
 }
 
-function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible }) {
+function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible, onSave }) {
   const [confirm,setConfirm]=useState(null);
   return (
     <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
