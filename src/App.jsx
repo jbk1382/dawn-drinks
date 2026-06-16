@@ -623,9 +623,12 @@ function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
 }
 
 // ─── ORDER MODAL ──────────────────────────────────────────────
-function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, onCancel, onConfirm, cart }) {
+function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, onCancel, onConfirm, cart }) {
   const [dailyCount, setDailyCount] = useState(0);
-  useEffect(() => { getDailyCount().then(setDailyCount); }, []);
+  const [slotCounts, setSlotCounts] = useState({});
+  useEffect(() => { getDailyData().then(d=>{ setDailyCount(d.count||0); setSlotCounts(d.slotCounts||{}); }); }, []);
+  const isSlotFull = (t) => slotLimit>0 && (slotCounts[t]||0) >= slotLimit;
+  const slotRemain = (t) => Math.max(0, slotLimit - (slotCounts[t]||0));
   const newQty = cart ? cart.reduce((s,i)=>s+i.qty,0) : 0;
   const dailyRemain = dailyLimit - dailyCount;
   const dates = getDeliveryDates();
