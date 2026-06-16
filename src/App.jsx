@@ -356,15 +356,7 @@ export default function App() {
       .catch(e => { clearTimeout(fallback); console.error('Boot error:',e); setBooting(false); });
   }, []);
 
-  // 음료·카테고리 변경 시 Firestore 자동 저장 (부팅 완료 후 + 실제 변경 시만)
-  const [drinksLoaded, setDrinksLoaded] = useState(false);
-  const [catsLoaded, setCatsLoaded] = useState(false);
-  useEffect(() => {
-    if (!booting && drinksLoaded) saveStoredDrinks(drinks);
-  }, [drinks]);
-  useEffect(() => {
-    if (!booting && catsLoaded) saveStoredCats(cats);
-  }, [cats]);
+  // 저장은 명시적 동작에서만 처리 (자동저장 제거)
 
   const thm = getTheme(settings);
   P = thm.P; PLIGHT = thm.light; PGRAD = thm.grad; // 전역 테마 업데이트
@@ -416,13 +408,24 @@ export default function App() {
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
-        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} />
+        {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={async id=>{
+  const updated=drinks.filter(d=>d.id!==id);
+  const ok=await saveStoredDrinks(updated);
+  if(ok){setDrinks(updated);notify("삭제됨");}
+  else notify("⚠️ 삭제 실패");
+}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} />
         {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={async d=>{
-  const updated = d.id ? drinks.map(x=>x.id===d.id?d:x) : [...drinks,{...d,id:Date.now().toString()}];
-  setDrinks(updated);
+  const id = d.id || Date.now().toString();
+  const drink = {...d, id};
+  const updated = d.id ? drinks.map(x=>x.id===d.id?drink:x) : [...drinks, drink];
   const ok = await saveStoredDrinks(updated);
-  notify(ok ? "✅ 저장 완료 (클라우드 반영)" : "⚠️ 저장 실패 - Firebase 확인 필요");
-  setScreen("admin");
+  if(ok) {
+    setDrinks(updated);
+    notify("✅ 저장 완료!");
+    setScreen("admin");
+  } else {
+    notify("⚠️ 저장 실패! 네트워크 확인 필요");
+  }
 }} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
         {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
