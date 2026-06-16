@@ -94,54 +94,35 @@ const fmt = (n) => n.toLocaleString("ko-KR") + "원";
 const WDAY = ['일','월','화','수','목','금','토'];
 const WDAY_FULL = ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
 
-// ─── Storage (localStorage 우선 + Firestore 동기화) ──────────
+// ─── Storage ─────────────────────────────────────────────────
 function getStoredUser() { try { return localStorage.getItem('hb_user'); } catch { return null; } }
 function setStoredUser(n) { try { localStorage.setItem('hb_user', n); } catch {} }
 
-// localStorage (즉시, 신뢰성 높음)
-function lsGet(k) { try { const v=localStorage.getItem(k); return v?JSON.parse(v):null; } catch { return null; } }
-function lsSet(k,v) { try { localStorage.setItem(k,JSON.stringify(v)); return true; } catch { return false; } }
-
-// Firestore (백그라운드 멀티기기 동기화)
-async function fsGet(path, docId) {
-  try { const s=await getDoc(doc(db,path,docId)); return s.exists()?s.data():null; } catch { return null; }
-}
-async function fsSetBg(path, docId, data) {
-  try { await setDoc(doc(db,path,docId), data); } catch(e) { console.warn('Firestore sync warn:',e?.code); }
-}
-
-// 설정
 async function getStoredSettings() {
-  const local = lsGet('hb_settings');
-  if (local) { fsGet('config','settings').then(d=>{if(d&&JSON.stringify(d)!==JSON.stringify(local))lsSet('hb_settings',d);}).catch(()=>{}); return local; }
-  const remote = await fsGet('config','settings'); if(remote) lsSet('hb_settings',remote); return remote;
+  try { const s=await getDoc(doc(db,'config','settings')); return s.exists()?s.data():null; } catch { return null; }
 }
 async function saveStoredSettings(s) {
-  lsSet('hb_settings', s);
-  fsSetBg('config','settings', s);
-  return true;
+  try { await setDoc(doc(db,'config','settings'),s); return true; } catch(e) { console.error('설정저장실패',e); return false; }
 }
-// 음료
 async function getStoredDrinks() {
-  const local = lsGet('hb_drinks');
-  if (local) { fsGet('config','drinks').then(d=>{if(d?.list) lsSet('hb_drinks',d.list);}).catch(()=>{}); return local; }
-  const remote = await fsGet('config','drinks'); if(remote?.list){ lsSet('hb_drinks',remote.list); return remote.list; } return null;
+  try { const s=await getDoc(doc(db,'config','drinks')); return s.exists()?(s.data().list||null):null; } catch { return null; }
 }
 async function saveStoredDrinks(list) {
-  const ok = lsSet('hb_drinks', list); // localStorage 즉시 저장
-  fsSetBg('config','drinks', {list});  // Firestore 백그라운드 동기화
-  return ok;
+  try {
+    // base64 이미지는 URL로 교체 (용량 문제 방지)
+    const safe = list.map(d=>({...d, image: d.image?.startsWith('data:')?'':d.image||''}));
+    await setDoc(doc(db,'config','drinks'),{list:safe});
+    return true;
+  } catch(e) {
+    console.error('음료저장실패',e?.code,e?.message);
+    return false;
+  }
 }
-// 카테고리
 async function getStoredCats() {
-  const local = lsGet('hb_cats');
-  if (local) { fsGet('config','cats').then(d=>{if(d?.list) lsSet('hb_cats',d.list);}).catch(()=>{}); return local; }
-  const remote = await fsGet('config','cats'); if(remote?.list){ lsSet('hb_cats',remote.list); return remote.list; } return null;
+  try { const s=await getDoc(doc(db,'config','cats')); return s.exists()?(s.data().list||null):null; } catch { return null; }
 }
 async function saveStoredCats(list) {
-  lsSet('hb_cats', list);
-  fsSetBg('config','cats', {list});
-  return true;
+  try { await setDoc(doc(db,'config','cats'),{list}); return true; } catch { return false; }
 }
 async function getUserOrders(name) {
   try {
@@ -921,7 +902,7 @@ function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible
   return (
     <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
       {drinks.length===0&&<div style={S.empty}>등록된 음료가 없습니다</div>}
-      {(drinks||[]).filter(d=>d&&d.id).map((d,di)=>(
+      {(drinks||[]).map((d,di)=>( d ? (
         <div key={d.id} style={{display:'flex',alignItems:'center',gap:6,padding:'10px 0',borderBottom:'1px solid #f5f5f5',opacity:d.visible===false?0.4:1}}>
           {/* 순서 ↑↓ */}
           <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>
@@ -944,7 +925,7 @@ function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible
           <button onClick={()=>onEdit(d)} style={{...S.editBtn,flexShrink:0}}>수정</button>
           <button onClick={()=>setConfirm(d.id||di)} style={{...S.delBtn,flexShrink:0,minWidth:36}}>삭제</button>
         </div>
-      ))}
+      ) : null))}
       {confirm&&<div style={S.overlay}><div style={{background:'#fff',borderRadius:20,padding:24,width:260,margin:'auto'}}><div style={{fontWeight:700,textAlign:'center',marginBottom:4}}>음료를 삭제할까요?</div><div style={{fontSize:13,color:'#888',textAlign:'center',marginBottom:20}}>삭제 후 복구할 수 없습니다</div><div style={{display:'flex',gap:10}}><button onClick={()=>setConfirm(null)} style={{flex:1,height:44,borderRadius:22,border:'1px solid #ddd',background:'#f5f5f5',cursor:'pointer',fontWeight:600,color:'#333'}}>취소</button><button onClick={()=>{onDelete(confirm);setConfirm(null);}} style={{flex:1,height:44,borderRadius:22,border:'2px solid #e53935',background:'#fff0f0',color:'#c62828',fontWeight:700,cursor:'pointer'}}>삭제</button></div></div></div>}
     </div>
   );
