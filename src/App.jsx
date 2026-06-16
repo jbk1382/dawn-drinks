@@ -324,7 +324,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const fallback = setTimeout(() => { console.warn('Firebase timeout'); setBooting(false); }, 6000);
+    const fallback = setTimeout(() => { console.warn('Firebase timeout'); setBooting(false); }, 10000);
     Promise.all([getStoredUser(), getStoredSettings(), getStoredDrinks(), getStoredCats()])
       .then(([user, stored, storedDrinks, storedCats]) => {
         clearTimeout(fallback);
@@ -346,9 +346,17 @@ export default function App() {
       .catch(e => { clearTimeout(fallback); console.error('Boot error:',e); setBooting(false); });
   }, []);
 
-  // 음료·카테고리 변경 시 Firestore 자동 저장
-  useEffect(() => { if (!booting) saveStoredDrinks(drinks); }, [drinks]);
-  useEffect(() => { if (!booting) saveStoredCats(cats); }, [cats]);
+  // 음료·카테고리 변경 시 Firestore 자동 저장 (booting 완료 후에만)
+  useEffect(() => {
+    if (!booting) {
+      saveStoredDrinks(drinks);
+    }
+  }, [drinks, booting]);
+  useEffect(() => {
+    if (!booting) {
+      saveStoredCats(cats);
+    }
+  }, [cats, booting]);
 
   const thm = getTheme(settings);
   P = thm.P; PLIGHT = thm.light; PGRAD = thm.grad; // 전역 테마 업데이트
@@ -401,7 +409,13 @@ export default function App() {
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
         {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} onReorder={setDrinks} onToggleVisible={id=>setDrinks(p=>p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d))} />}
-        {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{setDrinks(p=>d.id?p.map(x=>x.id===d.id?d:x):[...p,{...d,id:Date.now()}]);notify("저장됨 ✅");setScreen("admin");}} /></ErrorBoundary>}
+        {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{
+  const updated = d.id ? drinks.map(x=>x.id===d.id?d:x) : [...drinks,{...d,id:Date.now().toString()}];
+  setDrinks(updated);
+  saveStoredDrinks(updated); // 즉시 저장
+  notify("저장됨 ✅");
+  setScreen("admin");
+}} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
         {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
         {toast && <div style={S.toast}>{toast}</div>}
