@@ -113,7 +113,17 @@ async function getStoredDrinks() {
   const d = await fsGet('config','drinks');
   return d?.list || null;
 }
-async function saveStoredDrinks(list) { await fsSet('config','drinks',{list}); }
+async function saveStoredDrinks(list) {
+  try {
+    if (!db) { console.error('❌ DB 미초기화'); return false; }
+    await setDoc(doc(db,'config','drinks'), {list});
+    console.log('✅ 음료 저장 완료:', list.length, '개');
+    return true;
+  } catch(e) {
+    console.error('❌ 음료 저장 실패:', e.code, e.message);
+    return false;
+  }
+}
 async function getStoredCats() {
   const d = await fsGet('config','cats');
   return d?.list || null;
@@ -409,11 +419,11 @@ export default function App() {
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
         {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={id=>{setDrinks(p=>p.filter(d=>d.id!==id));notify("삭제됨");}} onToggleCat={id=>setCats(p=>p.map(c=>c.id===id?{...c,visible:!c.visible}:c))} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>setCats(p=>[...p,{...newCat,id:Date.now().toString(),visible:true}])} onSaveSettings={handleSaveSettings} onReorder={setDrinks} onToggleVisible={id=>setDrinks(p=>p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d))} />}
-        {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={d=>{
+        {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={async d=>{
   const updated = d.id ? drinks.map(x=>x.id===d.id?d:x) : [...drinks,{...d,id:Date.now().toString()}];
   setDrinks(updated);
-  saveStoredDrinks(updated); // 즉시 저장
-  notify("저장됨 ✅");
+  const ok = await saveStoredDrinks(updated);
+  notify(ok ? "✅ 저장 완료 (클라우드 반영)" : "⚠️ 저장 실패 - Firebase 확인 필요");
   setScreen("admin");
 }} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
