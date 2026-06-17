@@ -912,7 +912,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
 
 function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible, onSave }) {
   const [confirm,setConfirm]=useState(null);
-  const isValid=(d)=> d && typeof d==='object' && (d.name||'').trim() && Array.isArray(d.sizes) && d.sizes.length>0;
+  const isValid=(d)=> d && typeof d==='object' && (d.name||'').trim().length>0;
   const badCount=(drinks||[]).filter(d=>!isValid(d)).length;
   const cleanBad=()=>{ const kept=(drinks||[]).filter(isValid); onReorder(kept); };
   return (
