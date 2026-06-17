@@ -893,7 +893,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
       <div style={S.navBar}>
         <button onClick={onBack} style={S.backBtn}>‹</button>
         <span style={S.navTitle}>관리자 메뉴</span>
-        {activeTab==="drinks"?<div style={{display:'flex',gap:6}}><button onClick={onSave} style={{...S.iconBtn,background:P,color:'#fff',fontWeight:700,fontSize:12,padding:'6px 10px'}}>💾 저장</button><button onClick={onNew} style={S.newBtn}>+ 추가</button></div>:<span style={{width:50}}/>}
+        {activeTab==="drinks"?<div style={{display:'flex',gap:6}}><button onClick={onSaveDrinks} style={{...S.iconBtn,background:P,color:'#fff',fontWeight:700,fontSize:12,padding:'6px 10px'}}>💾 저장</button><button onClick={onNew} style={S.newBtn}>+ 추가</button></div>:<span style={{width:50}}/>}
       </div>
       <div style={{display:'flex',borderBottom:'2px solid #f0f0f0',flexShrink:0}}>
         {[{id:"drinks",label:"🥤 음료"},{id:"categories",label:"📂 카테고리"},{id:"orders",label:"📊 주문현황"},{id:"settings",label:"⚙️ 설정"}].map(t=>(
