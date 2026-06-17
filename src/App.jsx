@@ -421,7 +421,7 @@ export default function App() {
   const ok=await saveStoredDrinks(updated);
   if(ok){setDrinks(updated);notify("삭제됨");}
   else notify("⚠️ 삭제 실패");
-}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} />
+}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} />}
         {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={async d=>{
   const id = d.id || Date.now().toString();
   const drink = {...d, id};
@@ -912,13 +912,14 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
 
 function DrinksTab({ drinks, onEdit, onNew, onDelete, onReorder, onToggleVisible, onSave }) {
   const [confirm,setConfirm]=useState(null);
-  const emptyCount=(drinks||[]).filter(d=>d&&!(d.name||'').trim()).length;
-  const cleanEmpty=()=>{ const kept=(drinks||[]).filter(d=>d&&(d.name||'').trim()); onReorder(kept); };
+  const isValid=(d)=> d && typeof d==='object' && (d.name||'').trim() && Array.isArray(d.sizes) && d.sizes.length>0;
+  const badCount=(drinks||[]).filter(d=>!isValid(d)).length;
+  const cleanBad=()=>{ const kept=(drinks||[]).filter(isValid); onReorder(kept); };
   return (
     <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
-      {emptyCount>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:'#fff0f0',border:'1px solid #ffcdd2',borderRadius:12,padding:'10px 14px',margin:'10px 0'}}>
-        <span style={{fontSize:12,color:'#c62828',fontWeight:600}}>이름 없는 빈 메뉴 {emptyCount}개</span>
-        <button onClick={cleanEmpty} style={{padding:'6px 12px',border:'none',borderRadius:16,background:'#e53935',color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>일괄 삭제</button>
+      {badCount>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:'#fff0f0',border:'1px solid #ffcdd2',borderRadius:12,padding:'12px 14px',margin:'12px 0'}}>
+        <span style={{fontSize:12.5,color:'#c62828',fontWeight:700}}>비정상·이름 없는 메뉴 {badCount}개 발견</span>
+        <button onClick={cleanBad} style={{padding:'8px 14px',border:'none',borderRadius:16,background:'#e53935',color:'#fff',fontSize:12.5,fontWeight:800,cursor:'pointer',flexShrink:0}}>모두 삭제</button>
       </div>}
       {drinks.length===0&&<div style={S.empty}>등록된 음료가 없습니다</div>}
       {(drinks||[]).map((d,di)=>( d ? (
