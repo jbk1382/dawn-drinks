@@ -318,6 +318,8 @@ const INIT_SETTINGS = {
   adminPassword: "admin1234",
   dailyLimit: 15,
   slotLimit: 3,
+  orderStartEnabled: false,
+  orderStartTime: "08:00",
 };
 
 // ─── APP ──────────────────────────────────────────────────────
@@ -356,6 +358,8 @@ export default function App() {
           themeId: stored.themeId || INIT_SETTINGS.themeId,
           dailyLimit: stored.dailyLimit ?? INIT_SETTINGS.dailyLimit,
           slotLimit: stored.slotLimit ?? INIT_SETTINGS.slotLimit,
+          orderStartEnabled: stored.orderStartEnabled ?? INIT_SETTINGS.orderStartEnabled,
+          orderStartTime: stored.orderStartTime || INIT_SETTINGS.orderStartTime,
         }));
         if (storedDrinks) setDrinks(storedDrinks);
         if (storedCats) setCats(storedCats);
@@ -376,6 +380,17 @@ export default function App() {
   const addToCart = (item) => { setCart(p => [...p,{...item,cartId:Date.now()}]); playCartSound(); notify("장바구니에 담겼습니다 🛒"); setScreen("list"); };
 
   const handleOrder = async (info) => {
+    // ⓪ 주문 접수 시작 시간 체크
+    if (settings.orderStartEnabled && settings.orderStartTime) {
+      const now = new Date();
+      const [sh, sm] = settings.orderStartTime.split(':').map(Number);
+      const startMin = sh*60+sm;
+      const nowMin = now.getHours()*60+now.getMinutes();
+      if (nowMin < startMin) {
+        alert(`⏰ 아직 주문 접수 시간이 아닙니다\n\n오늘 주문 접수 시작: ${settings.orderStartTime}\n\n해당 시간 이후에 다시 주문해주세요.`);
+        return;
+      }
+    }
     // ① 월 개인 한도 체크
     const monthlyUsed = getMonthlyTotal(info.name||userName);
     if (monthlyUsed + cartTotal > MONTHLY_LIMIT) {
@@ -436,7 +451,7 @@ export default function App() {
   }
 }} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
-        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
+        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} orderStartEnabled={settings.orderStartEnabled} orderStartTime={settings.orderStartTime} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
         {toast && <div style={S.toast}>{toast}</div>}
         {!["detail","adminEdit"].includes(screen) && (()=>{
           const dlimit=settings.dailyLimit??15;
@@ -674,7 +689,7 @@ function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
 }
 
 // ─── ORDER MODAL ──────────────────────────────────────────────
-function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, onCancel, onConfirm, cart }) {
+function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, orderStartEnabled=false, orderStartTime="08:00", onCancel, onConfirm, cart }) {
   const [dailyCount, setDailyCount] = useState(0);
   const [slotCounts, setSlotCounts] = useState({});
   useEffect(() => { getDailyData().then(d=>{ setDailyCount(d.count||0); setSlotCounts(d.slotCounts||{}); }); }, []);
@@ -682,6 +697,11 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const slotRemain = (t) => Math.max(0, slotLimit - (slotCounts[t]||0));
   const newQty = cart ? cart.reduce((s,i)=>s+i.qty,0) : 0;
   const dailyRemain = dailyLimit - dailyCount;
+  const isBeforeStart = (() => {
+    if (!orderStartEnabled || !orderStartTime) return false;
+    const n = new Date(); const [sh,sm] = orderStartTime.split(':').map(Number);
+    return (n.getHours()*60+n.getMinutes()) < (sh*60+sm);
+  })();
   const dates = getDeliveryDates();
   const [name,setName]=useState(userName);
   const [location,setLocation]=useState("");
@@ -698,12 +718,21 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:`${date.tag} ${date.label}`,deliveryTime:time,isTakeout}); setLoading(false); };
   const monthlyUsed = getMonthlyTotal(name||userName);
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
-  const canOrder=!!time&&dayEnabled&&dailyRemain>0&&monthlyRemain>0&&!isSlotFull(time);
+  const canOrder=!!time&&dayEnabled&&dailyRemain>0&&monthlyRemain>0&&!isSlotFull(time)&&!isBeforeStart;
   return (
     <div style={S.overlay}>
       <div style={{background:'#fff',borderRadius:'22px 22px 0 0',padding:'16px 20px 32px',position:'absolute',bottom:0,left:0,right:0,maxHeight:'90%',overflowY:'auto'}}>
         <div style={{width:36,height:4,background:'#ddd',borderRadius:2,margin:'0 auto 16px'}} />
         <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>주문 정보 입력</div>
+        {isBeforeStart&&(
+          <div style={{background:'#fff3e0',border:'1.5px solid #ffcc80',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:20}}>⏰</span>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:'#e65100'}}>아직 주문 접수 시간이 아닙니다</div>
+              <div style={{fontSize:12,color:'#a05a00',marginTop:2}}>오늘 주문 접수 시작: {orderStartTime} 부터</div>
+            </div>
+          </div>
+        )}
         <div style={S.fLabel}>주문자 이름</div>
         <input value={name} onChange={e=>{setName(e.target.value);setErr("");}} placeholder="이름" style={S.mInput} />
         <div style={S.fLabel}>수령 방법</div>
@@ -1229,7 +1258,7 @@ function TextStyleBar({ label, value={}, onChange }) {
 }
 
 function SettingsTab({ settings, onSave }) {
-  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15,slotLimit:settings.slotLimit??3});
+  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15,slotLimit:settings.slotLimit??3,orderStartEnabled:settings.orderStartEnabled??false,orderStartTime:settings.orderStartTime||'08:00'});
   const [saved,setSaved]=useState(false);
   const [testing,setTesting]=useState(null);
   const [testResult,setTestResult]=useState(null);
@@ -1418,6 +1447,30 @@ function SettingsTab({ settings, onSave }) {
       <button onClick={save} style={{width:'100%',height:48,borderRadius:24,border:'none',background:saved?'#4caf50':P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',transition:'background 0.3s'}}>{saved?'✅ 저장 완료':'전체 설정 저장'}</button>
 
       {/* 하루 주문 수량 설정 */}
+      {/* 주문 접수 시작 시간 */}
+      <SH>⏰ 주문 접수 시작 시간</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>접수 시작 시간 제한 사용</div>
+            <div style={{fontSize:11,color:'#888',marginTop:2}}>설정한 시간 이전에는 주문할 수 없습니다</div>
+          </div>
+          <button onClick={()=>setForm(p=>({...p,orderStartEnabled:!p.orderStartEnabled}))} style={{width:48,height:26,borderRadius:13,border:'none',background:form.orderStartEnabled?P:'#ccc',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}}>
+            <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.orderStartEnabled?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
+          </button>
+        </div>
+        {form.orderStartEnabled&&(
+          <div>
+            <div style={{fontSize:12,color:'#555',marginBottom:6}}>접수 시작 시간</div>
+            <select value={form.orderStartTime||'08:00'} onChange={e=>setForm(p=>({...p,orderStartTime:e.target.value}))} style={{width:'100%',padding:'10px 8px',border:`1.5px solid ${P}`,borderRadius:10,fontSize:14,background:'#fff',cursor:'pointer',color:'#111',fontWeight:700}}>
+              {ALL_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
+            <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>매일 {form.orderStartTime||'08:00'} 부터 주문 접수 시작</div>
+          </div>
+        )}
+      </div>
+
+      {/* 하루 주문 수량 한도 */}
       <SH>🧋 하루 주문 수량 한도</SH>
       <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
         <div style={{fontSize:13,color:'#555',marginBottom:12}}>하루 전체 주문 가능한 최대 음료 잔 수를 설정합니다</div>
