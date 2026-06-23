@@ -153,16 +153,33 @@ async function pushOrder(name, order) {
 const MONTHLY_LIMIT = 10000; // 월 개인 한도
 const DAILY_DRINK_LIMIT = 15;  // 하루 전체 음료 한도
 
-// 하루 음료 잔수 (Firestore - 전체 공유)
+// 하루 음료 잔수 — 누적 카운터 방식(드리프트 위험) 대신
+// 실제 'orders' 컬렉션에서 오늘 날짜의 주문만 매번 다시 계산합니다.
+// 이렇게 하면 주문을 삭제/추가해도 항상 정확한 숫자가 나옵니다.
 function getTodayKey() {
   const n=new Date();
   return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
 }
+function getDateKeyFromISO(iso) {
+  try { const n=new Date(iso); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; } catch { return getTodayKey(); }
+}
 async function getDailyData() {
   try {
-    const snap = await getDoc(doc(db,'daily',getTodayKey()));
-    return snap.exists() ? snap.data() : {count:0, drinkCounts:{}};
-  } catch { return {count:0, drinkCounts:{}}; }
+    const todayKey = getTodayKey();
+    const snap = await getDocs(collection(db,'orders'));
+    let count=0; const drinkCounts={}; const slotCounts={};
+    snap.forEach(d=>{
+      const o = d.data();
+      if (getDateKeyFromISO(o.orderTime) !== todayKey) return;
+      (o.items||[]).forEach(item=>{
+        const qty = item.qty||0;
+        count += qty;
+        drinkCounts[item.name] = (drinkCounts[item.name]||0) + qty;
+      });
+      if (o.deliveryTime) slotCounts[o.deliveryTime] = (slotCounts[o.deliveryTime]||0) + 1;
+    });
+    return { count, drinkCounts, slotCounts };
+  } catch { return {count:0, drinkCounts:{}, slotCounts:{}}; }
 }
 async function getDailyCount() {
   const d = await getDailyData(); return d.count||0;
@@ -170,49 +187,8 @@ async function getDailyCount() {
 async function getDrinkDailyCount(drinkId) {
   const d = await getDailyData(); return (d.drinkCounts||{})[drinkId]||0;
 }
-async function incrementDailyCount(qty, cart, deliveryTime) {
-  try {
-    const k = getTodayKey();
-    const snap = await getDoc(doc(db,'daily',k));
-    const cur = snap.exists() ? snap.data() : {count:0, drinkCounts:{}, slotCounts:{}};
-    const drinkCounts = {...(cur.drinkCounts||{})};
-    if(cart) cart.forEach(item=>{
-      const id = item.drink.id||item.drink.name;
-      drinkCounts[id] = (drinkCounts[id]||0) + item.qty;
-    });
-    const slotCounts = {...(cur.slotCounts||{})};
-    if(deliveryTime) slotCounts[deliveryTime] = (slotCounts[deliveryTime]||0)+1;
-    await setDoc(doc(db,'daily',k), {count:(cur.count||0)+qty, drinkCounts, slotCounts, date:k});
-    return (cur.count||0)+qty;
-  } catch { return -1; }
-}
 async function getSlotCounts() {
   const d = await getDailyData(); return d.slotCounts||{};
-}
-// 주문 삭제 시 해당 날짜의 일일 카운트 차감
-function getDateKeyFromISO(iso) {
-  try { const n=new Date(iso); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; } catch { return getTodayKey(); }
-}
-async function decrementDailyCount(order) {
-  try {
-    if (!order || !order.orderTime) return;
-    const k = getDateKeyFromISO(order.orderTime);
-    const ref = doc(db,'daily',k);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return;
-    const cur = snap.data();
-    const qty = (order.items||[]).reduce((s,i)=>s+(i.qty||0),0);
-    const drinkCounts = {...(cur.drinkCounts||{})};
-    (order.items||[]).forEach(item=>{
-      const id = item.name;
-      if (drinkCounts[id]) drinkCounts[id] = Math.max(0, drinkCounts[id]-(item.qty||0));
-    });
-    const slotCounts = {...(cur.slotCounts||{})};
-    if (order.deliveryTime && slotCounts[order.deliveryTime]) {
-      slotCounts[order.deliveryTime] = Math.max(0, slotCounts[order.deliveryTime]-1);
-    }
-    await setDoc(ref, {...cur, count: Math.max(0,(cur.count||0)-qty), drinkCounts, slotCounts});
-  } catch(e) { console.error('decrementDailyCount error:',e); }
 }
 function getMonthKey(name) {
   const n=new Date(); return `hb_mon:${name}:${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
@@ -437,7 +413,7 @@ export default function App() {
     const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료" };
     await pushOrder(userName, order);
     addMonthlyTotal(info.name||userName, cartTotal); // 월 사용금액 누적
-    await incrementDailyCount(newDrinkQty, cart, info.deliveryTime); // 하루 잔수 누적
+    // 하루 잔수는 별도 누적 없이 주문 목록에서 매번 다시 계산됩니다 (정확성 보장)
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
     if (settings.telegram.enabled && settings.telegram.token) await sendTelegram(settings.telegram.token, settings.telegram.chatId, msg);
     if (settings.kakao.enabled && settings.kakao.accessToken) await sendKakao(settings.kakao.accessToken, msg);
@@ -1082,9 +1058,8 @@ function AdminOrdersTab({ onOrderDeleted }) {
   const [delConfirm,setDelConfirm]=useState(null);
   useEffect(()=>{ getAllOrders().then(setOrders); },[]);
   const handleDelete=async(orderId)=>{
-    const target = orders.find(o=>String(o.id)===String(orderId));
     await deleteOrder(orderId);
-    if (target) await decrementDailyCount(target);
+    // 하루 잔수는 별도 누적이 없으므로 차감도 필요 없습니다 (실시간 재계산)
     setOrders(p=>p.filter(o=>String(o.id)!==String(orderId)));
     setDelConfirm(null);
     if (onOrderDeleted) onOrderDeleted();
