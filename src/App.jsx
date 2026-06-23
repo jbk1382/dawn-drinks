@@ -142,7 +142,7 @@ async function getUserOrders(name) {
     const q = query(collection(db,'orders'), where('userName','==',name));
     const snap = await getDocs(q);
     const orders = [];
-    snap.forEach(d => orders.push({id:d.id,...d.data()}));
+    snap.forEach(d => orders.push({...d.data(), id:d.id}));
     return orders.sort((a,b)=>new Date(b.orderTime)-new Date(a.orderTime));
   } catch { return []; }
 }
@@ -223,7 +223,7 @@ async function getAllOrders() {
   try {
     const snap = await getDocs(collection(db,'orders'));
     const orders = [];
-    snap.forEach(d => orders.push({id:d.id,...d.data()}));
+    snap.forEach(d => orders.push({...d.data(), id:d.id}));
     return orders.sort((a,b)=>new Date(b.orderTime)-new Date(a.orderTime));
   } catch { return []; }
 }
@@ -255,7 +255,7 @@ async function sendKakao(accessToken, text) {
 function buildAdminMsg(info, cart, total, schoolName) {
   const items = cart.map(i => `• ${i.drink.name} (${i.selectedSize.label}) ×${i.qty} — ${fmt(i.totalPrice)}\n  ${Object.values(i.optionChoices).join(", ")}`).join("\n");
   const extra = info.extraRequest?.trim() ? `\n📝 요청: ${info.extraRequest.trim()}` : '';
-  return `📦 [${schoolName}] 새 주문!\n👤 ${info.name}  📍 ${info.location}${extra}\n📅 ${info.deliveryLabel} ${info.deliveryTime}\n\n${items}\n\n💰 합계: ${fmt(total)}\n⏰ ${new Date().toLocaleString("ko-KR")}`;
+  return `📦 [${schoolName}] 새 주문!\n👤 ${info.name}  📍 ${info.location}${extra}\n📅 ${cleanLabel(info.deliveryLabel)} ${info.deliveryTime}\n\n${items}\n\n💰 합계: ${fmt(total)}\n⏰ ${new Date().toLocaleString("ko-KR")}`;
 }
 
 // ─── Date / Time ──────────────────────────────────────────────
@@ -265,6 +265,8 @@ const ALL_TIME_OPTIONS = (() => {
   return o;
 })();
 function parseTimeMin(t) { const [h,m] = t.split(':').map(Number); return h*60+m; }
+// 과거 저장 데이터에 남아있는 '오늘/내일' 접두어 제거 (표시용)
+function cleanLabel(label) { return (label||'').replace(/^(오늘|내일)\s+/, ''); }
 function getDeliveryDates() {
   return [0].map(offset => {
     const d = new Date(); d.setDate(d.getDate()+offset);
@@ -714,7 +716,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const slots=getTimeSlotsForDay(deliveryHours[date.dow], isToday);
   const [isTakeout, setIsTakeout] = useState(false);
   const dayEnabled=deliveryHours[date.dow]?.enabled;
-  const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:`${date.tag} ${date.label}`,deliveryTime:time,isTakeout}); setLoading(false); };
+  const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:date.label,deliveryTime:time,isTakeout}); setLoading(false); };
   const monthlyUsed = getMonthlyTotal(name||userName);
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
   const canOrder=!!time&&dayEnabled&&dailyRemain>0&&monthlyRemain>0&&!isSlotFull(time)&&!isBeforeStart;
@@ -777,7 +779,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
                })}
              </div>}
            </div>}
-        {time&&dayEnabled&&<div style={{background:'#f0faf4',borderRadius:12,padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📅</span><div><div style={{fontSize:12,color:'#888'}}>선택된 배달 일시</div><div style={{fontSize:14,fontWeight:700,color:P}}>{date.tag} {date.label} {time}</div></div></div>}
+        {time&&dayEnabled&&<div style={{background:'#f0faf4',borderRadius:12,padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📅</span><div><div style={{fontSize:12,color:'#888'}}>선택된 배달 일시</div><div style={{fontSize:14,fontWeight:700,color:P}}>{date.label} {time}</div></div></div>}
         {err&&<div style={{color:'#e53935',fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
         {/* 하루 잔수 한도 표시 */}
         {(()=>{ const pct=Math.min(100,Math.round(dailyCount/dailyLimit*100));
@@ -829,7 +831,7 @@ function OrderSuccessScreen({ order, onDone }) {
       <div style={{background:'rgba(255,255,255,0.15)',borderRadius:18,padding:'18px 20px',width:'100%',marginBottom:24}}>
         <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginBottom:10,fontWeight:600}}>주문 요약</div>
         <div style={{color:'#fff',fontSize:14,marginBottom:4}}>📍 {order.location}</div>
-        <div style={{color:'#fff',fontSize:14,marginBottom:order.extraRequest?4:14}}>📅 {order.deliveryLabel} {order.deliveryTime}</div>
+        <div style={{color:'#fff',fontSize:14,marginBottom:order.extraRequest?4:14}}>📅 {cleanLabel(order.deliveryLabel)} {order.deliveryTime}</div>
         {order.extraRequest&&<div style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginBottom:14}}>📝 {order.extraRequest}</div>}
         <div style={{borderTop:'1px solid rgba(255,255,255,0.2)',paddingTop:12}}>
           {order.items.map((item,i)=><div key={i} style={{color:'rgba(255,255,255,0.9)',fontSize:13,marginBottom:5}}>• {item.name} ({item.size}) ×{item.qty} — {fmt(item.price)}</div>)}
@@ -884,7 +886,7 @@ function OrderCard({ order, compact }) {
     <div style={{borderBottom:compact?'1px solid #f5f5f5':'none',margin:compact?0:'0 16px 10px',border:compact?'none':'1px solid #f0f0f0',borderRadius:compact?0:14,overflow:'hidden'}}>
       <button onClick={()=>setExp(p=>!p)} style={{width:'100%',padding:'12px 16px',background:'none',border:'none',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',textAlign:'left',color:'#111'}}>
         <div style={{flex:1}}>
-          <div style={{fontSize:14,fontWeight:700}}>{order.deliveryLabel} {order.deliveryTime}</div>
+          <div style={{fontSize:14,fontWeight:700}}>{cleanLabel(order.deliveryLabel)} {order.deliveryTime}</div>
           <div style={{fontSize:12,color:'#888',marginTop:2}}>{order.location} · {order.items?.length||0}종 · <span style={{color:P,fontWeight:600}}>{fmt(order.totalPrice)}</span></div>
           <div style={{fontSize:11,color:'#bbb',marginTop:1}}>{dt} 주문</div>
         </div>
@@ -1106,7 +1108,7 @@ function AdminOrdersTab() {
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                   <div>
                     <div style={{fontSize:13,fontWeight:700}}>{o.name} → {o.location}</div>
-                    <div style={{fontSize:11,color:'#888',marginTop:2}}>📅 {o.deliveryLabel} {o.deliveryTime}</div>
+                    <div style={{fontSize:11,color:'#888',marginTop:2}}>📅 {cleanLabel(o.deliveryLabel)} {o.deliveryTime}</div>
                     {o.extraRequest&&<div style={{fontSize:11,color:'#666',marginTop:1}}>📝 {o.extraRequest}</div>}
                     <div style={{fontSize:11,color:'#bbb',marginTop:2}}>{o.orderTime?new Date(o.orderTime).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''} 주문</div>
                     {o.items?.map((item,j)=><div key={j} style={{fontSize:12,color:'#555',marginTop:2}}>• {item.name} ({item.size}) ×{item.qty}</div>)}
