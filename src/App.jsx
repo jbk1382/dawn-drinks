@@ -266,10 +266,10 @@ const ALL_TIME_OPTIONS = (() => {
 })();
 function parseTimeMin(t) { const [h,m] = t.split(':').map(Number); return h*60+m; }
 function getDeliveryDates() {
-  return [0,1].map(offset => {
+  return [0].map(offset => {
     const d = new Date(); d.setDate(d.getDate()+offset);
     const m=d.getMonth()+1, day=d.getDate(), wd=WDAY[d.getDay()];
-    return { value: d.toISOString().split('T')[0], label: `${m}월 ${day}일 (${wd})`, tag: offset===0?'오늘':'내일', dow: d.getDay() };
+    return { value: d.toISOString().split('T')[0], label: `${m}월 ${day}일 (${wd})`, tag: '오늘', dow: d.getDay() };
   });
 }
 function getTimeSlotsForDay(cfg, isToday) {
@@ -714,7 +714,6 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const slots=getTimeSlotsForDay(deliveryHours[date.dow], isToday);
   const [isTakeout, setIsTakeout] = useState(false);
   const dayEnabled=deliveryHours[date.dow]?.enabled;
-  const handleDateChange=(d)=>{ setDate(d); const s=getTimeSlotsForDay(deliveryHours[d.dow],d.value===dates[0].value); setTime(s[0]||''); };
   const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:`${date.tag} ${date.label}`,deliveryTime:time,isTakeout}); setLoading(false); };
   const monthlyUsed = getMonthlyTotal(name||userName);
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
@@ -749,14 +748,9 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
         {isTakeout&&<div style={{fontSize:12,color:P,marginTop:-8,marginBottom:10,paddingLeft:4}}>🛍️ 테이크아웃: 1층 통합교육지원반</div>}
         <div style={S.fLabel}>기타 요청사항 (선택)</div>
         <input value={extraRequest} onChange={e=>setExtraRequest(e.target.value)} placeholder="예) 빨대 빼주세요, 뜨겁게 해주세요" style={{...S.mInput,marginBottom:16}} />
-        <div style={S.fLabel}>배달 날짜</div>
-        <div style={{display:'flex',gap:10,marginBottom:14}}>
-          {dates.map(d=>(
-            <button key={d.value} onClick={()=>handleDateChange(d)} style={{flex:1,padding:'10px 8px',border:`2px solid ${date.value===d.value?P:'#e0e0e0'}`,borderRadius:12,background:date.value===d.value?'#f0faf4':'#fff',cursor:'pointer',textAlign:'center',color:'#111'}}>
-              <div style={{fontSize:11,fontWeight:700,color:date.value===d.value?P:'#999',marginBottom:3}}>{d.tag}</div>
-              <div style={{fontSize:13,fontWeight:600,color:date.value===d.value?P:'#444'}}>{d.label}</div>
-            </button>
-          ))}
+        <div style={{display:'flex',alignItems:'center',gap:8,background:'#f8f8f8',borderRadius:12,padding:'10px 14px',marginBottom:14}}>
+          <span style={{fontSize:16}}>📅</span>
+          <span style={{fontSize:13,fontWeight:700,color:'#444'}}>오늘 {date.label} 주문 (사전 예약 불가)</span>
         </div>
         <div style={S.fLabel}>배달 시간</div>
         {!dayEnabled ? <div style={{padding:'12px 14px',background:'#fff3e0',borderRadius:12,marginBottom:16,fontSize:13,color:'#e65100'}}>⚠️ {WDAY_FULL[date.dow]}은 배달 운영일이 아닙니다</div>
