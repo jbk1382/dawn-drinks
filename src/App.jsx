@@ -189,6 +189,31 @@ async function incrementDailyCount(qty, cart, deliveryTime) {
 async function getSlotCounts() {
   const d = await getDailyData(); return d.slotCounts||{};
 }
+// 주문 삭제 시 해당 날짜의 일일 카운트 차감
+function getDateKeyFromISO(iso) {
+  try { const n=new Date(iso); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; } catch { return getTodayKey(); }
+}
+async function decrementDailyCount(order) {
+  try {
+    if (!order || !order.orderTime) return;
+    const k = getDateKeyFromISO(order.orderTime);
+    const ref = doc(db,'daily',k);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const cur = snap.data();
+    const qty = (order.items||[]).reduce((s,i)=>s+(i.qty||0),0);
+    const drinkCounts = {...(cur.drinkCounts||{})};
+    (order.items||[]).forEach(item=>{
+      const id = item.name;
+      if (drinkCounts[id]) drinkCounts[id] = Math.max(0, drinkCounts[id]-(item.qty||0));
+    });
+    const slotCounts = {...(cur.slotCounts||{})};
+    if (order.deliveryTime && slotCounts[order.deliveryTime]) {
+      slotCounts[order.deliveryTime] = Math.max(0, slotCounts[order.deliveryTime]-1);
+    }
+    await setDoc(ref, {...cur, count: Math.max(0,(cur.count||0)-qty), drinkCounts, slotCounts});
+  } catch(e) { console.error('decrementDailyCount error:',e); }
+}
 function getMonthKey(name) {
   const n=new Date(); return `hb_mon:${name}:${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
 }
@@ -438,7 +463,7 @@ export default function App() {
   const ok=await saveStoredDrinks(updated);
   if(ok){setDrinks(updated);notify("삭제됨");}
   else notify("⚠️ 삭제 실패");
-}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} />}
+}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} onOrderDeleted={()=>getDailyCount().then(setDailyCountApp)} />}
         {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={async d=>{
   const id = d.id || Date.now().toString();
   const drink = {...d, id};
@@ -912,7 +937,7 @@ function OrderCard({ order, compact }) {
 }
 
 // ─── ADMIN ────────────────────────────────────────────────────
-function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, onEdit, onNew, onDelete, onToggleCat, onUpdateCat, onAddCat, onSaveSettings, onReorder, onToggleVisible, onSaveDrinks }) {
+function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, onEdit, onNew, onDelete, onToggleCat, onUpdateCat, onAddCat, onSaveSettings, onReorder, onToggleVisible, onSaveDrinks, onOrderDeleted }) {
   return (
     <div style={S.screen}>
       <div style={S.navBar}>
@@ -928,7 +953,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
       <div style={{flex:1,overflowY:'auto',minHeight:0}}>
         {activeTab==="drinks"     && <DrinksTab drinks={drinks} onEdit={onEdit} onNew={onNew} onDelete={onDelete} onReorder={onReorder} onToggleVisible={onToggleVisible} onSave={onSaveDrinks} />}
         {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} onAdd={onAddCat} onReorder={newCats=>{setCats(newCats);saveStoredCats(newCats);}} />}
-        {activeTab==="orders"     && <AdminOrdersTab />}
+        {activeTab==="orders"     && <AdminOrdersTab onOrderDeleted={onOrderDeleted} />}
         {activeTab==="settings"   && <SettingsTab settings={settings} onSave={onSaveSettings} />}
       </div>
     </div>
@@ -1050,16 +1075,19 @@ function CategoriesTab({ cats, onToggle, onUpdate, onAdd, onReorder }) {
 }
 
 // ─── ADMIN ORDERS ─────────────────────────────────────────────
-function AdminOrdersTab() {
+function AdminOrdersTab({ onOrderDeleted }) {
   const [orders,setOrders]=useState(null);
   const [subTab,setSubTab]=useState('daily');
   const [open,setOpen]=useState({});
   const [delConfirm,setDelConfirm]=useState(null);
   useEffect(()=>{ getAllOrders().then(setOrders); },[]);
   const handleDelete=async(orderId)=>{
+    const target = orders.find(o=>String(o.id)===String(orderId));
     await deleteOrder(orderId);
+    if (target) await decrementDailyCount(target);
     setOrders(p=>p.filter(o=>String(o.id)!==String(orderId)));
     setDelConfirm(null);
+    if (onOrderDeleted) onOrderDeleted();
   };
   if (!orders) return <div style={S.empty}>로딩 중...<br/><span style={{fontSize:12,color:'#aaa'}}>전체 주문 내역을 불러오는 중</span></div>;
   if (delConfirm!==null) return (
