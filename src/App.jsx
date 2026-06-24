@@ -200,27 +200,28 @@ function addMonthlyTotal(name, amount) {
   try { const k=getMonthKey(name); localStorage.setItem(k, (parseInt(localStorage.getItem(k)||'0')+amount).toString()); } catch {}
 }
 
-// ─── 한도 초과 허용 쿠폰 ───────────────────────────────────────
+// ─── 한도 초과 / 운영시간 초월 허용 쿠폰 ───────────────────────
+// type: 'limit' = 월·일 한도 초과 허용 / 'time' = 운영시간(접수시작·슬롯마감) 초월 허용
 // 쿠폰은 Firestore 'coupons' 컬렉션에 코드(대문자)를 문서ID로 저장합니다.
 function genCouponCode() {
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s=''; for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
   return s;
 }
-async function createCoupon(maxUses=1) {
+async function createCoupon(maxUses=1, type='limit') {
   let code;
   for(let tries=0; tries<5; tries++) {
     code = genCouponCode();
     const exists = await getDoc(doc(db,'coupons',code));
     if (!exists.exists()) break;
   }
-  await setDoc(doc(db,'coupons',code), { active:true, maxUses, usedCount:0, createdAt:new Date().toISOString() });
+  await setDoc(doc(db,'coupons',code), { active:true, maxUses, usedCount:0, type, createdAt:new Date().toISOString() });
   return code;
 }
 async function listCoupons() {
   try {
     const snap = await getDocs(collection(db,'coupons'));
-    const list=[]; snap.forEach(d=>list.push({code:d.id, ...d.data()}));
+    const list=[]; snap.forEach(d=>list.push({code:d.id, type:'limit', ...d.data()}));
     return list.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
   } catch { return []; }
 }
@@ -230,17 +231,22 @@ async function toggleCoupon(code, active) {
 async function deleteCoupon(code) {
   try { const { deleteDoc } = await import('firebase/firestore'); await deleteDoc(doc(db,'coupons',code)); } catch {}
 }
-// 주문 직전 검증만 (사용횟수 증가 없음)
-async function checkCoupon(codeRaw) {
+// 주문 직전 검증만 (사용횟수 증가 없음). expectedType을 넘기면 종류까지 일치해야 통과합니다.
+async function checkCoupon(codeRaw, expectedType=null) {
   const code = (codeRaw||'').trim().toUpperCase();
   if (!code) return { ok:false, message:'코드를 입력해주세요' };
   try {
     const snap = await getDoc(doc(db,'coupons',code));
     if (!snap.exists()) return { ok:false, message:'존재하지 않는 쿠폰입니다' };
     const c = snap.data();
+    const type = c.type||'limit';
     if (!c.active) return { ok:false, message:'비활성화된 쿠폰입니다' };
     if (c.maxUses>0 && (c.usedCount||0)>=c.maxUses) return { ok:false, message:'사용 횟수가 모두 소진된 쿠폰입니다' };
-    return { ok:true, code };
+    if (expectedType && type!==expectedType) {
+      const label = expectedType==='time' ? '운영시간 초월' : '한도 초과';
+      return { ok:false, message:`이 쿠폰은 '${type==='time'?'운영시간 초월':'한도 초과'}' 전용입니다. '${label}' 쿠폰을 입력해주세요` };
+    }
+    return { ok:true, code, type };
   } catch { return { ok:false, message:'확인 중 오류가 발생했습니다' }; }
 }
 // 실제 주문 확정 시 사용횟수 1 증가 (재검증 포함)
@@ -439,8 +445,8 @@ export default function App() {
   const addToCart = (item) => { setCart(p => [...p,{...item,cartId:Date.now()}]); playCartSound(); notify("장바구니에 담겼습니다 🛒"); setScreen("list"); };
 
   const handleOrder = async (info) => {
-    // ⓪ 주문 접수 시작 시간 체크
-    if (settings.orderStartEnabled && settings.orderStartTime) {
+    // ⓪ 주문 접수 시작 시간 체크 (운영시간 초월 쿠폰 적용 시 건너뜀)
+    if (!info.timeCouponCode && settings.orderStartEnabled && settings.orderStartTime) {
       const now = new Date();
       const [sh, sm] = settings.orderStartTime.split(':').map(Number);
       const startMin = sh*60+sm;
@@ -472,13 +478,18 @@ export default function App() {
     }
     // 쿠폰 최종 재검증 (다른 사람이 먼저 써버렸을 가능성 대비)
     if (info.couponCode) {
-      const recheck = await checkCoupon(info.couponCode);
-      if (!recheck.ok) { alert(`⚠️ 쿠폰 사용 불가\n\n${recheck.message}`); return; }
+      const recheck = await checkCoupon(info.couponCode, 'limit');
+      if (!recheck.ok) { alert(`⚠️ 한도 초과 쿠폰 사용 불가\n\n${recheck.message}`); return; }
     }
-    const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료", couponCode:info.couponCode||null };
+    if (info.timeCouponCode) {
+      const recheck = await checkCoupon(info.timeCouponCode, 'time');
+      if (!recheck.ok) { alert(`⚠️ 운영시간 초월 쿠폰 사용 불가\n\n${recheck.message}`); return; }
+    }
+    const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료", couponCode:info.couponCode||null, timeCouponCode:info.timeCouponCode||null };
     await pushOrder(userName, order);
-    if (info.couponCode) await redeemCoupon(info.couponCode); // 쿠폰 사용 처리
-    else addMonthlyTotal(info.name||userName, cartTotal); // 일반 주문만 월 사용금액 누적
+    if (info.couponCode) await redeemCoupon(info.couponCode);
+    if (info.timeCouponCode) await redeemCoupon(info.timeCouponCode);
+    if (!info.couponCode) addMonthlyTotal(info.name||userName, cartTotal); // 한도쿠폰 미사용시만 월 사용금액 누적
     // 하루 잔수는 별도 누적 없이 주문 목록에서 매번 다시 계산됩니다 (정확성 보장)
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
     if (settings.telegram.enabled && settings.telegram.token) await sendTelegram(settings.telegram.token, settings.telegram.chatId, msg);
@@ -783,23 +794,27 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const slots=getTimeSlotsForDay(deliveryHours[date.dow], isToday);
   const [isTakeout, setIsTakeout] = useState(false);
   const dayEnabled=deliveryHours[date.dow]?.enabled;
-  const [couponInput,setCouponInput]=useState('');
-  const [couponState,setCouponState]=useState(null); // null | {ok,message,code}
-  const [couponChecking,setCouponChecking]=useState(false);
-  const applyCoupon=async()=>{
-    if(!couponInput.trim()) return;
-    setCouponChecking(true);
-    const r = await checkCoupon(couponInput);
-    setCouponState(r);
-    setCouponChecking(false);
-  };
-  const clearCoupon=()=>{ setCouponState(null); setCouponInput(''); };
-  const couponApplied = couponState?.ok===true;
-  const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:date.label,deliveryTime:time,isTakeout,couponCode:couponApplied?couponState.code:null}); setLoading(false); };
+  // 쿠폰: ① 한도 초과 허용 ② 운영시간 초월 허용 — 서로 독립적으로 작동
+  const [limitCInput,setLimitCInput]=useState('');
+  const [limitCState,setLimitCState]=useState(null);
+  const [limitCChecking,setLimitCChecking]=useState(false);
+  const applyLimitCoupon=async()=>{ if(!limitCInput.trim())return; setLimitCChecking(true); setLimitCState(await checkCoupon(limitCInput,'limit')); setLimitCChecking(false); };
+  const clearLimitCoupon=()=>{ setLimitCState(null); setLimitCInput(''); };
+  const limitCouponApplied = limitCState?.ok===true;
+
+  const [timeCInput,setTimeCInput]=useState('');
+  const [timeCState,setTimeCState]=useState(null);
+  const [timeCChecking,setTimeCChecking]=useState(false);
+  const applyTimeCoupon=async()=>{ if(!timeCInput.trim())return; setTimeCChecking(true); setTimeCState(await checkCoupon(timeCInput,'time')); setTimeCChecking(false); };
+  const clearTimeCoupon=()=>{ setTimeCState(null); setTimeCInput(''); };
+  const timeCouponApplied = timeCState?.ok===true;
+
+  const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:date.label,deliveryTime:time,isTakeout,couponCode:limitCouponApplied?limitCState.code:null,timeCouponCode:timeCouponApplied?timeCState.code:null}); setLoading(false); };
   const monthlyUsed = getMonthlyTotal(name||userName);
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
   const limitBlocked = dailyRemain<=0 || monthlyRemain<=0;
-  const canOrder=!!time&&dayEnabled&&!isSlotFull(time)&&!isBeforeStart&&(couponApplied || !limitBlocked);
+  const timeBlocked = isBeforeStart || isSlotFull(time);
+  const canOrder=!!time&&dayEnabled&&(timeCouponApplied || !timeBlocked)&&(limitCouponApplied || !limitBlocked);
   return (
     <div style={S.overlay}>
       <div style={{background:'#fff',borderRadius:'22px 22px 0 0',padding:'16px 20px 32px',position:'absolute',bottom:0,left:0,right:0,maxHeight:'90%',overflowY:'auto'}}>
@@ -812,6 +827,32 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
               <div style={{fontSize:13,fontWeight:700,color:'#e65100'}}>아직 주문 접수 시간이 아닙니다</div>
               <div style={{fontSize:12,color:'#a05a00',marginTop:2}}>오늘 주문 접수 시작: {orderStartTime} 부터</div>
             </div>
+          </div>
+        )}
+        {/* 쿠폰: 운영시간 초월 허용 — 시간 제한에 걸렸을 때만 노출 */}
+        {(timeBlocked||timeCouponApplied)&&(
+          <div style={{borderRadius:12,padding:'12px 14px',marginBottom:14,background:timeCouponApplied?'#f0faf4':'#fafafa',border:`1.5px solid ${timeCouponApplied?P:'#e0e0e0'}`}}>
+            {timeCouponApplied ? (
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:16}}>⏰</span>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:P}}>운영시간 초월 쿠폰 적용됨 ({timeCState.code})</div>
+                    <div style={{fontSize:11,color:'#666',marginTop:1}}>접수시간·마감시간과 무관하게 주문할 수 있습니다</div>
+                  </div>
+                </div>
+                <button onClick={clearTimeCoupon} style={{fontSize:11,padding:'4px 10px',border:'1px solid #ddd',borderRadius:10,background:'#fff',color:'#888',cursor:'pointer'}}>취소</button>
+              </div>
+            ) : (
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:'#555',marginBottom:8}}>⏰ 운영시간 초월 쿠폰이 있나요?</div>
+                <div style={{display:'flex',gap:8}}>
+                  <input value={timeCInput} onChange={e=>{setTimeCInput(e.target.value.toUpperCase());setTimeCState(null);}} placeholder="쿠폰 코드 입력" style={{flex:1,padding:'9px 12px',border:'1.5px solid #ddd',borderRadius:10,fontSize:13,letterSpacing:1,textTransform:'uppercase'}} onKeyDown={e=>e.key==='Enter'&&applyTimeCoupon()} />
+                  <button onClick={applyTimeCoupon} disabled={timeCChecking||!timeCInput.trim()} style={{padding:'9px 16px',border:'none',borderRadius:10,background:timeCInput.trim()?P:'#ccc',color:'#fff',fontSize:13,fontWeight:700,cursor:timeCInput.trim()?'pointer':'default'}}>{timeCChecking?'확인중...':'적용'}</button>
+                </div>
+                {timeCState&&!timeCState.ok&&<div style={{fontSize:11,color:'#e53935',marginTop:6}}>⚠️ {timeCState.message}</div>}
+              </div>
+            )}
           </div>
         )}
         <div style={S.fLabel}>주문자 이름</div>
@@ -890,27 +931,27 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
           </div>);
         })()}
         {/* 쿠폰: 한도 초과 시에만 노출, 적용되면 항상 표시 */}
-        {(limitBlocked||couponApplied)&&(
-          <div style={{borderRadius:12,padding:'12px 14px',marginBottom:12,background:couponApplied?'#f0faf4':'#fafafa',border:`1.5px solid ${couponApplied?P:'#e0e0e0'}`}}>
-            {couponApplied ? (
+        {(limitBlocked||limitCouponApplied)&&(
+          <div style={{borderRadius:12,padding:'12px 14px',marginBottom:12,background:limitCouponApplied?'#f0faf4':'#fafafa',border:`1.5px solid ${limitCouponApplied?P:'#e0e0e0'}`}}>
+            {limitCouponApplied ? (
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
                   <span style={{fontSize:16}}>🎟️</span>
                   <div>
-                    <div style={{fontSize:13,fontWeight:700,color:P}}>쿠폰 적용됨 ({couponState.code})</div>
+                    <div style={{fontSize:13,fontWeight:700,color:P}}>한도 초과 쿠폰 적용됨 ({limitCState.code})</div>
                     <div style={{fontSize:11,color:'#666',marginTop:1}}>한도 제한 없이 주문할 수 있습니다</div>
                   </div>
                 </div>
-                <button onClick={clearCoupon} style={{fontSize:11,padding:'4px 10px',border:'1px solid #ddd',borderRadius:10,background:'#fff',color:'#888',cursor:'pointer'}}>취소</button>
+                <button onClick={clearLimitCoupon} style={{fontSize:11,padding:'4px 10px',border:'1px solid #ddd',borderRadius:10,background:'#fff',color:'#888',cursor:'pointer'}}>취소</button>
               </div>
             ) : (
               <div>
                 <div style={{fontSize:12,fontWeight:700,color:'#555',marginBottom:8}}>🎟️ 한도 초과 허용 쿠폰이 있나요?</div>
                 <div style={{display:'flex',gap:8}}>
-                  <input value={couponInput} onChange={e=>{setCouponInput(e.target.value.toUpperCase());setCouponState(null);}} placeholder="쿠폰 코드 입력" style={{flex:1,padding:'9px 12px',border:'1.5px solid #ddd',borderRadius:10,fontSize:13,letterSpacing:1,textTransform:'uppercase'}} onKeyDown={e=>e.key==='Enter'&&applyCoupon()} />
-                  <button onClick={applyCoupon} disabled={couponChecking||!couponInput.trim()} style={{padding:'9px 16px',border:'none',borderRadius:10,background:couponInput.trim()?P:'#ccc',color:'#fff',fontSize:13,fontWeight:700,cursor:couponInput.trim()?'pointer':'default'}}>{couponChecking?'확인중...':'적용'}</button>
+                  <input value={limitCInput} onChange={e=>{setLimitCInput(e.target.value.toUpperCase());setLimitCState(null);}} placeholder="쿠폰 코드 입력" style={{flex:1,padding:'9px 12px',border:'1.5px solid #ddd',borderRadius:10,fontSize:13,letterSpacing:1,textTransform:'uppercase'}} onKeyDown={e=>e.key==='Enter'&&applyLimitCoupon()} />
+                  <button onClick={applyLimitCoupon} disabled={limitCChecking||!limitCInput.trim()} style={{padding:'9px 16px',border:'none',borderRadius:10,background:limitCInput.trim()?P:'#ccc',color:'#fff',fontSize:13,fontWeight:700,cursor:limitCInput.trim()?'pointer':'default'}}>{limitCChecking?'확인중...':'적용'}</button>
                 </div>
-                {couponState&&!couponState.ok&&<div style={{fontSize:11,color:'#e53935',marginTop:6}}>⚠️ {couponState.message}</div>}
+                {limitCState&&!limitCState.ok&&<div style={{fontSize:11,color:'#e53935',marginTop:6}}>⚠️ {limitCState.message}</div>}
               </div>
             )}
           </div>
@@ -1365,17 +1406,26 @@ function CouponManager() {
   const [coupons,setCoupons]=useState(null);
   const [creating,setCreating]=useState(false);
   const [newMax,setNewMax]=useState(1);
+  const [newType,setNewType]=useState('limit');
   const refresh = ()=>listCoupons().then(setCoupons);
   useEffect(()=>{ refresh(); },[]);
   const create = async()=>{
     setCreating(true);
-    await createCoupon(newMax);
+    await createCoupon(newMax, newType);
     await refresh();
     setCreating(false);
   };
+  const TYPE_LABEL = { limit:{icon:'🎟️',text:'한도 초과',color:'#1565c0',bg:'#e3f2fd'}, time:{icon:'⏰',text:'운영시간 초월',color:'#e65100',bg:'#fff3e0'} };
   return (
     <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
-      <div style={{fontSize:13,color:'#555',marginBottom:12}}>발급된 코드를 학생에게 전달하면, 주문창에서 입력해 월·일 한도를 초과해도 주문할 수 있습니다</div>
+      <div style={{fontSize:13,color:'#555',marginBottom:12}}>두 종류를 분리해서 발급합니다. <b>한도 초과</b> 쿠폰은 월·일 주문 한도를, <b>운영시간 초월</b> 쿠폰은 접수시작시간·마감시간 제한을 풀어줍니다</div>
+      <div style={{display:'flex',gap:6,marginBottom:10}}>
+        {Object.entries(TYPE_LABEL).map(([key,t])=>(
+          <button key={key} onClick={()=>setNewType(key)} style={{flex:1,padding:'8px 6px',border:`1.5px solid ${newType===key?t.color:'#ddd'}`,borderRadius:10,background:newType===key?t.bg:'#fff',color:newType===key?t.color:'#888',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+            {t.icon} {t.text}
+          </button>
+        ))}
+      </div>
       <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:14}}>
         <div style={{display:'flex',alignItems:'center',gap:6}}>
           <span style={{fontSize:12,color:'#666'}}>사용 횟수</span>
@@ -1386,14 +1436,15 @@ function CouponManager() {
       </div>
       {coupons===null&&<div style={{fontSize:12,color:'#999',textAlign:'center',padding:8}}>불러오는 중...</div>}
       {coupons&&coupons.length===0&&<div style={{fontSize:12,color:'#999',textAlign:'center',padding:8}}>발급된 쿠폰이 없습니다</div>}
-      {coupons&&coupons.map(c=>(
+      {coupons&&coupons.map(c=>{ const t=TYPE_LABEL[c.type||'limit']; return (
         <div key={c.code} style={{display:'flex',alignItems:'center',gap:8,background:'#fff',borderRadius:10,padding:'9px 12px',marginBottom:6,opacity:c.active?1:0.5}}>
+          <span style={{fontSize:10,fontWeight:700,padding:'3px 7px',borderRadius:8,background:t.bg,color:t.color,flexShrink:0}}>{t.icon} {t.text}</span>
           <span style={{fontFamily:'monospace',fontSize:15,fontWeight:800,letterSpacing:1,color:P}}>{c.code}</span>
           <span style={{fontSize:11,color:'#888',flex:1}}>{c.usedCount||0}{c.maxUses>0?` / ${c.maxUses}`:''}회 사용</span>
           <button onClick={()=>toggleCoupon(c.code,!c.active).then(refresh)} style={{fontSize:11,padding:'4px 9px',border:'1px solid #ddd',borderRadius:8,background:c.active?'#fff':'#f0f0f0',color:c.active?'#555':'#999',cursor:'pointer'}}>{c.active?'사용중':'비활성'}</button>
           <button onClick={()=>deleteCoupon(c.code).then(refresh)} style={{fontSize:11,padding:'4px 9px',border:'1px solid #ffcdd2',borderRadius:8,background:'#ffebee',color:'#c62828',cursor:'pointer'}}>삭제</button>
         </div>
-      ))}
+      ); })}
     </div>
   );
 }
