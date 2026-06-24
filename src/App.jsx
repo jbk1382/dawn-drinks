@@ -200,8 +200,8 @@ function addMonthlyTotal(name, amount) {
   try { const k=getMonthKey(name); localStorage.setItem(k, (parseInt(localStorage.getItem(k)||'0')+amount).toString()); } catch {}
 }
 
-// ─── 한도 초과 / 운영시간 초월 허용 쿠폰 ───────────────────────
-// type: 'limit' = 월·일 한도 초과 허용 / 'time' = 운영시간(접수시작·슬롯마감) 초월 허용
+// ─── 보너스 / 운영시간 초월 쿠폰 ───────────────────────────────
+// type: 'limit' = 보너스 쿠폰(월·일 한도 초과 허용) / 'time' = 운영시간 초월 쿠폰(접수시작·슬롯마감 + 한도까지 모두 허용)
 // 쿠폰은 Firestore 'coupons' 컬렉션에 코드(대문자)를 문서ID로 저장합니다.
 function genCouponCode() {
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -243,8 +243,8 @@ async function checkCoupon(codeRaw, expectedType=null) {
     if (!c.active) return { ok:false, message:'비활성화된 쿠폰입니다' };
     if (c.maxUses>0 && (c.usedCount||0)>=c.maxUses) return { ok:false, message:'사용 횟수가 모두 소진된 쿠폰입니다' };
     if (expectedType && type!==expectedType) {
-      const label = expectedType==='time' ? '운영시간 초월' : '한도 초과';
-      return { ok:false, message:`이 쿠폰은 '${type==='time'?'운영시간 초월':'한도 초과'}' 전용입니다. '${label}' 쿠폰을 입력해주세요` };
+      const label = expectedType==='time' ? '운영시간 초월' : '보너스';
+      return { ok:false, message:`이 쿠폰은 '${type==='time'?'운영시간 초월':'보너스'}' 전용입니다. '${label}' 쿠폰을 입력해주세요` };
     }
     return { ok:true, code, type };
   } catch { return { ok:false, message:'확인 중 오류가 발생했습니다' }; }
@@ -456,8 +456,8 @@ export default function App() {
         return;
       }
     }
-    // ① 월 개인 한도 체크 (쿠폰 적용 시 건너뜀)
-    if (!info.couponCode) {
+    // ① 월 개인 한도 체크 (보너스 쿠폰 또는 운영시간 초월 쿠폰 적용 시 건너뜀)
+    if (!info.couponCode && !info.timeCouponCode) {
       const monthlyUsed = getMonthlyTotal(info.name||userName);
       if (monthlyUsed + cartTotal > MONTHLY_LIMIT) {
         const remain = MONTHLY_LIMIT - monthlyUsed;
@@ -465,9 +465,9 @@ export default function App() {
         return;
       }
     }
-    // ② 하루 전체 잔수 한도 체크 (쿠폰 적용 시 건너뜀)
+    // ② 하루 전체 잔수 한도 체크 (보너스 쿠폰 또는 운영시간 초월 쿠폰 적용 시 건너뜀)
     const newDrinkQty = cart.reduce((s,i)=>s+i.qty, 0);
-    if (!info.couponCode) {
+    if (!info.couponCode && !info.timeCouponCode) {
       const dailyCount = await getDailyCount();
       const todayLimit = settings.dailyLimit ?? DAILY_DRINK_LIMIT;
       if (dailyCount + newDrinkQty > todayLimit) {
@@ -479,7 +479,7 @@ export default function App() {
     // 쿠폰 최종 재검증 (다른 사람이 먼저 써버렸을 가능성 대비)
     if (info.couponCode) {
       const recheck = await checkCoupon(info.couponCode, 'limit');
-      if (!recheck.ok) { alert(`⚠️ 한도 초과 쿠폰 사용 불가\n\n${recheck.message}`); return; }
+      if (!recheck.ok) { alert(`⚠️ 보너스 쿠폰 사용 불가\n\n${recheck.message}`); return; }
     }
     if (info.timeCouponCode) {
       const recheck = await checkCoupon(info.timeCouponCode, 'time');
@@ -489,7 +489,7 @@ export default function App() {
     await pushOrder(userName, order);
     if (info.couponCode) await redeemCoupon(info.couponCode);
     if (info.timeCouponCode) await redeemCoupon(info.timeCouponCode);
-    if (!info.couponCode) addMonthlyTotal(info.name||userName, cartTotal); // 한도쿠폰 미사용시만 월 사용금액 누적
+    if (!info.couponCode && !info.timeCouponCode) addMonthlyTotal(info.name||userName, cartTotal); // 쿠폰 미사용시만 월 사용금액 누적
     // 하루 잔수는 별도 누적 없이 주문 목록에서 매번 다시 계산됩니다 (정확성 보장)
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
     if (settings.telegram.enabled && settings.telegram.token) await sendTelegram(settings.telegram.token, settings.telegram.chatId, msg);
@@ -794,7 +794,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const slots=getTimeSlotsForDay(deliveryHours[date.dow], isToday);
   const [isTakeout, setIsTakeout] = useState(false);
   const dayEnabled=deliveryHours[date.dow]?.enabled;
-  // 쿠폰: ① 한도 초과 허용 ② 운영시간 초월 허용 — 서로 독립적으로 작동
+  // 쿠폰: ① 보너스(한도 초과 허용) ② 운영시간 초월(시간+한도 모두 허용) — 서로 독립적으로 발급/적용
   const [limitCInput,setLimitCInput]=useState('');
   const [limitCState,setLimitCState]=useState(null);
   const [limitCChecking,setLimitCChecking]=useState(false);
@@ -814,7 +814,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
   const limitBlocked = dailyRemain<=0 || monthlyRemain<=0;
   const timeBlocked = isBeforeStart || isSlotFull(time);
-  const canOrder=!!time&&dayEnabled&&(timeCouponApplied || !timeBlocked)&&(limitCouponApplied || !limitBlocked);
+  const canOrder=!!time&&dayEnabled&&(timeCouponApplied || !timeBlocked)&&(limitCouponApplied || timeCouponApplied || !limitBlocked);
   return (
     <div style={S.overlay}>
       <div style={{background:'#fff',borderRadius:'22px 22px 0 0',padding:'16px 20px 32px',position:'absolute',bottom:0,left:0,right:0,maxHeight:'90%',overflowY:'auto'}}>
@@ -838,7 +838,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
                   <span style={{fontSize:16}}>⏰</span>
                   <div>
                     <div style={{fontSize:13,fontWeight:700,color:P}}>운영시간 초월 쿠폰 적용됨 ({timeCState.code})</div>
-                    <div style={{fontSize:11,color:'#666',marginTop:1}}>접수시간·마감시간과 무관하게 주문할 수 있습니다</div>
+                    <div style={{fontSize:11,color:'#666',marginTop:1}}>접수시간·마감시간·한도 제한과 무관하게 주문할 수 있습니다</div>
                   </div>
                 </div>
                 <button onClick={clearTimeCoupon} style={{fontSize:11,padding:'4px 10px',border:'1px solid #ddd',borderRadius:10,background:'#fff',color:'#888',cursor:'pointer'}}>취소</button>
@@ -936,9 +936,9 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
             {limitCouponApplied ? (
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontSize:16}}>🎟️</span>
+                  <span style={{fontSize:16}}>🎁</span>
                   <div>
-                    <div style={{fontSize:13,fontWeight:700,color:P}}>한도 초과 쿠폰 적용됨 ({limitCState.code})</div>
+                    <div style={{fontSize:13,fontWeight:700,color:P}}>보너스 쿠폰 적용됨 ({limitCState.code})</div>
                     <div style={{fontSize:11,color:'#666',marginTop:1}}>한도 제한 없이 주문할 수 있습니다</div>
                   </div>
                 </div>
@@ -946,7 +946,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
               </div>
             ) : (
               <div>
-                <div style={{fontSize:12,fontWeight:700,color:'#555',marginBottom:8}}>🎟️ 한도 초과 허용 쿠폰이 있나요?</div>
+                <div style={{fontSize:12,fontWeight:700,color:'#555',marginBottom:8}}>🎁 보너스 쿠폰이 있나요?</div>
                 <div style={{display:'flex',gap:8}}>
                   <input value={limitCInput} onChange={e=>{setLimitCInput(e.target.value.toUpperCase());setLimitCState(null);}} placeholder="쿠폰 코드 입력" style={{flex:1,padding:'9px 12px',border:'1.5px solid #ddd',borderRadius:10,fontSize:13,letterSpacing:1,textTransform:'uppercase'}} onKeyDown={e=>e.key==='Enter'&&applyLimitCoupon()} />
                   <button onClick={applyLimitCoupon} disabled={limitCChecking||!limitCInput.trim()} style={{padding:'9px 16px',border:'none',borderRadius:10,background:limitCInput.trim()?P:'#ccc',color:'#fff',fontSize:13,fontWeight:700,cursor:limitCInput.trim()?'pointer':'default'}}>{limitCChecking?'확인중...':'적용'}</button>
@@ -1415,10 +1415,10 @@ function CouponManager() {
     await refresh();
     setCreating(false);
   };
-  const TYPE_LABEL = { limit:{icon:'🎟️',text:'한도 초과',color:'#1565c0',bg:'#e3f2fd'}, time:{icon:'⏰',text:'운영시간 초월',color:'#e65100',bg:'#fff3e0'} };
+  const TYPE_LABEL = { limit:{icon:'🎁',text:'보너스',color:'#1565c0',bg:'#e3f2fd'}, time:{icon:'⏰',text:'운영시간 초월',color:'#e65100',bg:'#fff3e0'} };
   return (
     <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
-      <div style={{fontSize:13,color:'#555',marginBottom:12}}>두 종류를 분리해서 발급합니다. <b>한도 초과</b> 쿠폰은 월·일 주문 한도를, <b>운영시간 초월</b> 쿠폰은 접수시작시간·마감시간 제한을 풀어줍니다</div>
+      <div style={{fontSize:13,color:'#555',marginBottom:12}}>두 종류를 분리해서 발급합니다. <b>보너스</b> 쿠폰은 월·일 주문 한도를 풀어주고, <b>운영시간 초월</b> 쿠폰은 접수시작시간·마감시간 제한과 함께 한도까지 모두 풀어줍니다</div>
       <div style={{display:'flex',gap:6,marginBottom:10}}>
         {Object.entries(TYPE_LABEL).map(([key,t])=>(
           <button key={key} onClick={()=>setNewType(key)} style={{flex:1,padding:'8px 6px',border:`1.5px solid ${newType===key?t.color:'#ddd'}`,borderRadius:10,background:newType===key?t.bg:'#fff',color:newType===key?t.color:'#888',fontSize:12,fontWeight:700,cursor:'pointer'}}>
@@ -1637,8 +1637,8 @@ function SettingsTab({ settings, onSave }) {
 
       <button onClick={save} style={{width:'100%',height:48,borderRadius:24,border:'none',background:saved?'#4caf50':P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',transition:'background 0.3s'}}>{saved?'✅ 저장 완료':'전체 설정 저장'}</button>
 
-      {/* 한도 초과 허용 쿠폰 */}
-      <SH>🎟️ 한도 초과 허용 쿠폰</SH>
+      {/* 보너스 / 운영시간 초월 쿠폰 */}
+      <SH>🎁 보너스 · 운영시간 초월 쿠폰</SH>
       <CouponManager />
 
       {/* 하루 주문 수량 설정 */}
