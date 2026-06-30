@@ -516,7 +516,7 @@ export default function App() {
   const ok=await saveStoredDrinks(updated);
   if(ok){setDrinks(updated);notify("삭제됨");}
   else notify("⚠️ 삭제 실패");
-}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>setCats(p=>p.map(c=>c.id===id?{...c,...u}:c))} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} onOrderDeleted={()=>getDailyCount().then(setDailyCountApp)} />}
+}} onToggleCat={id=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,visible:!c.visible}:c);saveStoredCats(next);return next;});}} onUpdateCat={(id,u)=>{setCats(p=>{const next=p.map(c=>c.id===id?{...c,...u}:c);saveStoredCats(next);return next;});}} onAddCat={newCat=>{setCats(p=>{const next=[...p,{...newCat,id:Date.now().toString(),visible:true}];saveStoredCats(next);return next;});}} onSaveSettings={handleSaveSettings} onReorder={arr=>{setDrinks(arr);saveStoredDrinks(arr);}} onToggleVisible={id=>{setDrinks(p=>{const next=p.map(d=>d.id===id?{...d,visible:d.visible===false?true:false}:d);saveStoredDrinks(next);return next;});}} onSaveDrinks={()=>saveStoredDrinks(drinks).then(ok=>{})} onOrderDeleted={()=>getDailyCount().then(setDailyCountApp)} />}
         {screen==="adminEdit"&& <ErrorBoundary><AdminEditScreen drink={editDrink} cats={cats} onBack={()=>setScreen("admin")} onSave={async d=>{
   const id = d.id || Date.now().toString();
   const drink = {...d, id};
@@ -1125,8 +1125,8 @@ function NewCatForm({ onAdd }) {
       ) : (
         <div style={{background:'#f0faf4',borderRadius:14,padding:14,marginBottom:8}}>
           <div style={{fontSize:13,fontWeight:600,color:P,marginBottom:10}}>새 카테고리</div>
-          <div style={{display:'flex',gap:8,marginBottom:8}}>
-            <input value={icon} onChange={e=>setIcon(e.target.value)} placeholder="🍵" style={{...S.input,width:56,marginBottom:0,textAlign:'center',fontSize:22}} />
+          <div style={{display:'flex',gap:8,marginBottom:8,alignItems:'center'}}>
+            <IconPicker value={icon} onChange={setIcon} placeholder="🍵" />
             <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="카테고리 이름" style={{...S.input,flex:1,marginBottom:0}} autoFocus onKeyDown={e=>e.key==='Enter'&&save()} />
           </div>
           <div style={{display:'flex',gap:8}}>
@@ -1156,8 +1156,8 @@ function CategoriesTab({ cats, onToggle, onUpdate, onAdd, onReorder }) {
           <div style={{flex:1}}>
           {editing===cat.id?(
             <div style={{padding:'14px 0'}}>
-              <div style={{display:'flex',gap:8,marginBottom:10}}>
-                <input value={ef.icon} onChange={e=>setEf(p=>({...p,icon:e.target.value}))} placeholder="🍵" style={{...S.input,width:60,marginBottom:0,textAlign:'center',fontSize:22}} />
+              <div style={{display:'flex',gap:8,marginBottom:10,alignItems:'center'}}>
+                <IconPicker value={ef.icon} onChange={v=>setEf(p=>({...p,icon:v}))} placeholder="🍵" />
                 <input value={ef.label} onChange={e=>setEf(p=>({...p,label:e.target.value}))} placeholder="카테고리 이름" style={{...S.input,flex:1,marginBottom:0}} />
               </div>
               <div style={{display:'flex',gap:8}}>
