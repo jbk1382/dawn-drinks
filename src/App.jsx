@@ -184,8 +184,8 @@ async function getDailyData() {
 async function getDailyCount() {
   const d = await getDailyData(); return d.count||0;
 }
-async function getDrinkDailyCount(drinkId) {
-  const d = await getDailyData(); return (d.drinkCounts||{})[drinkId]||0;
+async function getDrinkDailyCount(drinkName) { // ⚠️ 주문 저장 데이터에 id가 없어 항상 '음료 이름'으로 집계됩니다
+  const d = await getDailyData(); return (d.drinkCounts||{})[drinkName]||0;
 }
 async function getSlotCounts() {
   const d = await getDailyData(); return d.slotCounts||{};
@@ -477,13 +477,31 @@ export default function App() {
     }
     // ② 하루 전체 잔수 한도 체크 (보너스 쿠폰 적용 시 건너뜀)
     const newDrinkQty = cart.reduce((s,i)=>s+i.qty, 0);
+    let dailyData = null;
     if (!bypassesLimit) {
-      const dailyCount = await getDailyCount();
+      dailyData = await getDailyData();
+      const dailyCount = dailyData.count||0;
       const todayLimit = settings.dailyLimit ?? DAILY_DRINK_LIMIT;
       if (dailyCount + newDrinkQty > todayLimit) {
         const remain = todayLimit - dailyCount;
         alert(`⚠️ 오늘 주문 가능한 잔 수 초과\n\n오늘 주문된 잔수: ${dailyCount}잔 / ${todayLimit}잔\n남은 잔수: ${remain>0?remain+'잔':'없음'}\n\n오늘은 더 이상 주문할 수 없습니다.\n내일 다시 시도해주세요.`);
         return;
+      }
+    }
+    // ③ 음료별 개별 하루 판매 한도 체크 (보너스 쿠폰 적용 시 건너뜀)
+    if (!bypassesLimit) {
+      if (!dailyData) dailyData = await getDailyData();
+      const drinkCounts = dailyData.drinkCounts||{};
+      for (const item of cart) {
+        const maxForDrink = item.drink.dailyMax || 0;
+        if (maxForDrink > 0) {
+          const used = drinkCounts[item.drink.name] || 0;
+          if (used + item.qty > maxForDrink) {
+            const remain = Math.max(0, maxForDrink - used);
+            alert(`⚠️ '${item.drink.name}' 오늘 판매 한도 초과\n\n오늘 판매된 수량: ${used}잔 / ${maxForDrink}잔\n남은 수량: ${remain>0?remain+'잔':'없음'}\n\n해당 메뉴는 오늘 더 이상 주문할 수 없습니다.`);
+            return;
+          }
+        }
       }
     }
     const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료", bonusCouponCode:bonus?.code||null };
@@ -657,7 +675,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
 function ListScreen({ category, drinks, onBack, onSelect, cartCount, onCart }) {
   const [drinkCounts, setDrinkCounts] = useState({});
   useEffect(()=>{ getDailyData().then(d=>setDrinkCounts(d.drinkCounts||{})); },[]);
-  const isSoldOut = (d) => d.dailyMax>0 && (drinkCounts[d.id||d.name]||0)>=d.dailyMax;
+  const isSoldOut = (d) => d.dailyMax>0 && (drinkCounts[d.name]||0)>=d.dailyMax;
   return (
     <div style={S.screen}>
       <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>{category?category.label:"전체 메뉴"}</span><button onClick={onCart} style={{...S.iconBtn,position:'relative'}}>🛒{cartCount>0&&<span style={S.badge}>{cartCount}</span>}</button></div>
