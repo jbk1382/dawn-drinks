@@ -190,14 +190,20 @@ async function getDrinkDailyCount(drinkName) { // ⚠️ 주문 저장 데이터
 async function getSlotCounts() {
   const d = await getDailyData(); return d.slotCounts||{};
 }
-function getMonthKey(name) {
-  const n=new Date(); return `hb_mon:${name}:${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
+// 이번 달 개인 사용 금액 — localStorage(기기별) 대신 실제 'orders' 기록에서 매번 다시 계산합니다.
+// 기기를 바꾸거나 캐시를 지워도 항상 정확한 금액이 나옵니다. (보너스 쿠폰으로 주문한 건은 집계에서 제외)
+function getMonthKeyStr() {
+  const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
 }
-function getMonthlyTotal(name) {
-  try { return parseInt(localStorage.getItem(getMonthKey(name))||'0'); } catch { return 0; }
-}
-function addMonthlyTotal(name, amount) {
-  try { const k=getMonthKey(name); localStorage.setItem(k, (parseInt(localStorage.getItem(k)||'0')+amount).toString()); } catch {}
+async function getMonthlyUsed(name) {
+  if (!name) return 0;
+  try {
+    const orders = await getUserOrders(name);
+    const mk = getMonthKeyStr();
+    return orders
+      .filter(o => !o.bonusCouponCode && (o.orderTime||'').slice(0,7)===mk)
+      .reduce((s,o)=>s+(o.totalPrice||0), 0);
+  } catch { return 0; }
 }
 
 // ─── 보너스 / 운영시간 초월 쿠폰 ───────────────────────────────
@@ -468,7 +474,7 @@ export default function App() {
     }
     // ① 월 개인 한도 체크 (보너스 쿠폰 적용 시 건너뜀)
     if (!bypassesLimit) {
-      const monthlyUsed = getMonthlyTotal(info.name||userName);
+      const monthlyUsed = await getMonthlyUsed(info.name||userName);
       if (monthlyUsed + cartTotal > MONTHLY_LIMIT) {
         const remain = MONTHLY_LIMIT - monthlyUsed;
         alert(`⚠️ 이번 달 주문 한도 초과\n\n이번 달 사용: ${fmt(monthlyUsed)} / ${fmt(MONTHLY_LIMIT)}\n남은 한도: ${remain>0?fmt(remain):'없음'}\n\n월 주문 한도(${fmt(MONTHLY_LIMIT)})를 초과하여 주문할 수 없습니다.\n다음 달 1일부터 다시 주문 가능합니다.`);
@@ -507,7 +513,7 @@ export default function App() {
     const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료", bonusCouponCode:bonus?.code||null };
     await pushOrder(userName, order);
     if (bonus) await redeemCoupon(bonus.code);
-    else addMonthlyTotal(info.name||userName, cartTotal); // 쿠폰 미사용시만 월 사용금액 누적
+    // 이번 달 사용 금액은 별도 누적 없이 주문 기록에서 매번 다시 계산됩니다 (정확성 보장)
     // 하루 잔수는 별도 누적 없이 주문 목록에서 매번 다시 계산됩니다 (정확성 보장)
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
     if (settings.telegram.enabled && settings.telegram.token) await sendTelegram(settings.telegram.token, settings.telegram.chatId, msg);
@@ -791,6 +797,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const [dailyCount, setDailyCount] = useState(0);
   const [slotCounts, setSlotCounts] = useState({});
   useEffect(() => { getDailyData().then(d=>{ setDailyCount(d.count||0); setSlotCounts(d.slotCounts||{}); }); }, []);
+  const [monthlyUsed, setMonthlyUsed] = useState(0);
   const isSlotFull = (t) => slotLimit>0 && (slotCounts[t]||0) >= slotLimit;
   const slotRemain = (t) => Math.max(0, slotLimit - (slotCounts[t]||0));
   const newQty = cart ? cart.reduce((s,i)=>s+i.qty,0) : 0;
@@ -830,7 +837,14 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const dayEnabled=deliveryHours[date.dow]?.enabled;
 
   const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:date.label,deliveryTime:time,isTakeout,bonusCouponCode:bonusApplied?bonusState.code:null}); setLoading(false); };
-  const monthlyUsed = getMonthlyTotal(name||userName);
+  // 이번 달 사용 금액은 기기와 무관하게 실제 주문 기록에서 매번 다시 불러옵니다
+  useEffect(() => {
+    let active = true;
+    const target = (name||userName||'').trim();
+    if (!target) { setMonthlyUsed(0); return; }
+    const t = setTimeout(() => { getMonthlyUsed(target).then(v=>{ if(active) setMonthlyUsed(v); }); }, 300);
+    return () => { active=false; clearTimeout(t); };
+  }, [name, userName]);
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
   const limitBlocked = dailyRemain<=0 || monthlyRemain<=0;
   const timeBlocked = isBeforeStart || isSlotFull(time) || !dayEnabled;
@@ -912,7 +926,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
           </div>);
         })()}
         {/* 월 한도 표시 */}
-        {(()=>{ const used=getMonthlyTotal(name||userName); const remain=MONTHLY_LIMIT-used; const pct=Math.min(100,Math.round(used/MONTHLY_LIMIT*100));
+        {(()=>{ const used=monthlyUsed; const remain=monthlyRemain; const pct=Math.min(100,Math.round(used/MONTHLY_LIMIT*100));
           return (<div style={{background:remain<=0?'#ffebee':remain<3000?'#fff3e0':'#f0faf4',borderRadius:12,padding:'10px 14px',marginBottom:12}}>
             <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
               <span style={{fontSize:12,color:'#666'}}>이번달 사용</span>
