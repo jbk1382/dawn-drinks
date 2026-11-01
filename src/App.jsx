@@ -3,6 +3,8 @@ import { db } from './firebase';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import React from 'react';
 
+const ShaderBanner = React.lazy(() => import('./ShaderBanner'));
+
 let P = "#1a7a4a";
 let PLIGHT = "#f0faf4";
 let PGRAD = "#2ea76a"; // 전역 테마 색상들
@@ -645,6 +647,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
       <div style={{flex:1,overflowY:'auto',minHeight:0}}>
         {/* 배너 */}
         <div style={{margin:'10px 16px',borderRadius:18,background:`linear-gradient(135deg,${P},${PGRAD})`,overflow:'hidden',position:'relative',minHeight:110,flexShrink:0}}>
+          {navigator.gpu && <React.Suspense fallback={null}><ShaderBanner colorA={P} colorB={PGRAD} /></React.Suspense>}
           {bannerImg && <img src={bannerImg} alt="" onError={e=>e.target.style.display='none'} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} />}
           <div style={{padding:'18px 22px',color:'#fff',position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
             <div style={{flex:1}}>
