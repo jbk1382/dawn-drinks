@@ -54,6 +54,23 @@ body {
   margin: 0;
 }
 
+.banner-fx-fallback {
+  position: absolute;
+  inset: 0;
+  animation: banner-fx-shift 10s ease-in-out infinite;
+}
+
+@keyframes banner-fx-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-fx-fallback {
+    animation: none;
+  }
+}
+
 #root {
   width: 1126px;
   max-width: 100%;
