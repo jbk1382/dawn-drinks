@@ -65,9 +65,52 @@ body {
   50% { background-position: 100% 50%; }
 }
 
+.dk-icon {
+  overflow: visible;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3));
+}
+.dk-icon * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.dk-steam { opacity: 0; animation: dk-steam 2.1s ease-in-out infinite; }
+.dk-bubble { opacity: 0; animation: dk-bubble 2.2s ease-in infinite; }
+.dk-bob { animation: dk-bob 2.2s ease-in-out infinite; }
+.dk-swirl { animation: dk-bob 2.6s ease-in-out infinite; }
+.dk-spin { animation: dk-spin 9s linear infinite; }
+.dk-swing { transform-origin: top center; animation: dk-swing 2.4s ease-in-out infinite; }
+.dk-tilt { transform-origin: bottom center; animation: dk-swing 2.8s ease-in-out infinite; }
+
+@keyframes dk-steam {
+  0% { opacity: 0; transform: translateY(5px) scaleX(0.8); }
+  40% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(-7px) scaleX(1.2); }
+}
+@keyframes dk-bubble {
+  0% { opacity: 0; transform: translateY(0); }
+  20% { opacity: 0.95; }
+  100% { opacity: 0; transform: translateY(-26px); }
+}
+@keyframes dk-bob {
+  0%, 100% { transform: translateY(1.5px) rotate(-5deg); }
+  50% { transform: translateY(-2.5px) rotate(5deg); }
+}
+@keyframes dk-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes dk-swing {
+  0%, 100% { transform: rotate(-10deg); }
+  50% { transform: rotate(10deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .banner-fx-fallback {
+  .banner-fx-fallback,
+  .dk-icon * {
     animation: none;
+  }
+  .dk-steam,
+  .dk-bubble {
+    opacity: 0.7;
   }
 }
 

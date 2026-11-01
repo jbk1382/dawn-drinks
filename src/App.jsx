@@ -4,6 +4,7 @@ import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from '
 import React from 'react';
 
 import { BannerFx, BannerFxSettings } from './BannerFx';
+import { BannerDrink, BannerDrinkPicker } from './BannerDrink';
 
 let P = "#1a7a4a";
 let PLIGHT = "#f0faf4";
@@ -655,7 +656,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
               <div style={{fontSize:19,fontWeight:800,lineHeight:1.35}}>{banner?.headline || `${schoolName} 음료를 주문하세요 🍹`}</div>
               <div style={{fontSize:banner?.subtextStyle?.size||12,marginTop:6,opacity:0.85,color:banner?.subtextStyle?.color||'rgba(255,255,255,0.85)',fontWeight:banner?.subtextStyle?.bold?700:400,fontStyle:banner?.subtextStyle?.italic?'italic':'normal',textDecoration:banner?.subtextStyle?.underline?'underline':'none'}}>{banner?.subtext || '매일 신선하게 준비됩니다'}</div>
             </div>
-            {!bannerImg && <div style={{fontSize:44,opacity:0.3}}>☕</div>}
+            <BannerDrink id={banner?.drinkIcon} />
           </div>
         </div>
 
@@ -1550,6 +1551,7 @@ function SettingsTab({ settings, onSave }) {
         <input value={form.banner?.subtext||''} onChange={e=>upBanner('subtext',e.target.value)} placeholder="매일 신선하게 준비됩니다" style={S.input} />
         <TextStyleBar label="서브 문구 스타일" value={form.banner?.subtextStyle||{}} onChange={v=>upBanner('subtextStyle',v)} />
         <BannerFxSettings banner={form.banner} themeColor={P} onChange={upBanner} />
+        <BannerDrinkPicker value={form.banner?.drinkIcon} themeColor={P} onChange={upBanner} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:6}}>배너 이미지</div>
         {form.banner?.image&&(
           <div style={{marginBottom:8,position:'relative'}}>
@@ -1566,10 +1568,13 @@ function SettingsTab({ settings, onSave }) {
         <div style={{marginTop:10,borderRadius:12,background:`linear-gradient(135deg,${P},${PGRAD})`,padding:'12px 16px',color:'#fff',overflow:'hidden',position:'relative',minHeight:60}}>
           <BannerFx banner={form.banner} themeColor={P} />
           {form.banner?.image&&<img src={form.banner.image} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} onError={e=>e.target.style.display='none'} />}
-          <div style={{position:'relative',zIndex:1}}>
-            <div style={{fontSize:10,opacity:0.8,marginBottom:2}}>음료 주문 서비스</div>
-            <div style={{fontSize:14,fontWeight:800}}>{form.banner?.headline||'헤드라인'}</div>
-            <div style={{fontSize:11,opacity:0.8,marginTop:3}}>{form.banner?.subtext||'서브 문구'}</div>
+          <div style={{position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,opacity:0.8,marginBottom:2}}>음료 주문 서비스</div>
+              <div style={{fontSize:14,fontWeight:800}}>{form.banner?.headline||'헤드라인'}</div>
+              <div style={{fontSize:11,opacity:0.8,marginTop:3}}>{form.banner?.subtext||'서브 문구'}</div>
+            </div>
+            <BannerDrink id={form.banner?.drinkIcon} size={48} />
           </div>
         </div>
       </div>
