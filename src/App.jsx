@@ -3,9 +3,6 @@ import { db } from './firebase';
 import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import React from 'react';
 
-import { BannerFx, BannerFxSettings } from './BannerFx';
-import { BannerDrink, BannerDrinkPicker } from './BannerDrink';
-
 let P = "#1a7a4a";
 let PLIGHT = "#f0faf4";
 let PGRAD = "#2ea76a"; // 전역 테마 색상들
@@ -100,6 +97,8 @@ const WDAY_FULL = ['일요일','월요일','화요일','수요일','목요일','
 // ─── Storage ─────────────────────────────────────────────────
 function getStoredUser() { try { return localStorage.getItem('hb_user'); } catch { return null; } }
 function setStoredUser(n) { try { localStorage.setItem('hb_user', n); } catch {} }
+function getQuizPassed() { try { return sessionStorage.getItem('hb_quiz_passed') === '1'; } catch { return false; } }
+function setQuizPassedStore() { try { sessionStorage.setItem('hb_quiz_passed','1'); } catch {} }
 
 async function getStoredSettings() {
   try { const s=await getDoc(doc(db,'config','settings')); return s.exists()?s.data():null; } catch { return null; }
@@ -394,6 +393,13 @@ const INIT_SETTINGS = {
   slotLimit: 3,
   orderStartEnabled: false,
   orderStartTime: "08:00",
+  quizEnabled: false,
+  quizTitle: "스쿨카페 이용 안내",
+  quizQuestions: [
+    { q: "스쿨카페는 누가 만들어 주나요?", options: ["통합교육지원반 학생들", "외부 업체", "급식실", "도서관"], answer: 0 },
+    { q: "주문한 음료는 정해진 시간에 어떻게 받나요?", options: ["아무 때나 가져간다", "선택한 수령 시간에 맞춰 받는다", "다음 날 받는다", "친구가 대신 가져간다"], answer: 1 },
+  ],
+  consentText: "주문 시 입력한 이름과 주문 내역이 스쿨카페 운영(주문 확인·수령 안내) 목적으로만 사용되는 것에 동의합니다.",
 };
 
 // ─── APP ──────────────────────────────────────────────────────
@@ -402,6 +408,7 @@ export default function App() {
   const [dailyCountApp, setDailyCountApp] = useState(0);
   useEffect(()=>{ getDailyCount().then(setDailyCountApp); },[]);
   const [userName, setUserName] = useState(null);
+  const [quizPassed, setQuizPassed] = useState(() => getQuizPassed());
   const [screen, setScreen] = useState("home");
   const [selCat, setSelCat] = useState(null);
   const [selDrink, setSelDrink] = useState(null);
@@ -434,6 +441,10 @@ export default function App() {
           slotLimit: stored.slotLimit ?? INIT_SETTINGS.slotLimit,
           orderStartEnabled: stored.orderStartEnabled ?? INIT_SETTINGS.orderStartEnabled,
           orderStartTime: stored.orderStartTime || INIT_SETTINGS.orderStartTime,
+          quizEnabled: stored.quizEnabled ?? INIT_SETTINGS.quizEnabled,
+          quizTitle: stored.quizTitle || INIT_SETTINGS.quizTitle,
+          quizQuestions: (stored.quizQuestions && stored.quizQuestions.length) ? stored.quizQuestions : INIT_SETTINGS.quizQuestions,
+          consentText: stored.consentText ?? INIT_SETTINGS.consentText,
         }));
         if (storedDrinks) setDrinks(storedDrinks);
         if (storedCats) setCats(storedCats);
@@ -527,6 +538,7 @@ export default function App() {
   const handleSaveSettings = async (s) => { setSettings(s); await saveStoredSettings(s); notify("설정 저장됨 ✅"); };
 
   if (booting) return <div style={S.shell}><div style={{...S.phone,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48}}>🥤</div><div style={{color:'#888',marginTop:10}}>로딩 중...</div></div></div></div>;
+  if (settings.quizEnabled && !quizPassed) return <div style={S.shell}><div style={S.phone}><QuizConsentScreen title={settings.quizTitle} questions={settings.quizQuestions} consentText={settings.consentText} onPass={()=>{ setQuizPassedStore(); setQuizPassed(true); }} /></div></div>;
   if (!userName) return <div style={S.shell}><div style={S.phone}><LoginScreen onLogin={handleLogin} /></div></div>;
   if (successOrder) return <div style={S.shell}><div style={S.phone}><OrderSuccessScreen order={successOrder} onDone={()=>{setSuccessOrder(null);setScreen("home");}} /></div></div>;
 
@@ -610,6 +622,49 @@ function AdminLoginModal({ correctPassword, onSuccess, onCancel }) {
   );
 }
 
+// ─── QUIZ + CONSENT (첫 화면) ─────────────────────────────────
+function QuizConsentScreen({ title, questions=[], consentText, onPass }) {
+  const [picked,setPicked] = useState({});
+  const [checked,setChecked] = useState(false);
+  const [tried,setTried] = useState(false);
+  const qs = questions.filter(x=>x && x.q && (x.options||[]).filter(Boolean).length>=2);
+  const allAnswered = qs.every((_,i)=>picked[i]!==undefined);
+  const allCorrect = qs.every((x,i)=>picked[i]===x.answer);
+  const needConsent = !!(consentText && consentText.trim());
+  const canGo = allAnswered && (!needConsent || checked);
+  const go = () => {
+    setTried(true);
+    if (!allCorrect) { setPicked(p=>{ const n={...p}; qs.forEach((x,i)=>{ if(n[i]!==x.answer) delete n[i]; }); return n; }); return; }
+    if (needConsent && !checked) return;
+    onPass();
+  };
+  return (
+    <div style={{flex:1,overflowY:'auto',padding:'28px 22px 32px',background:'#fff'}}>
+      <div style={{textAlign:'center',marginBottom:20}}>
+        <div style={{fontSize:48}}>📋</div>
+        <div style={{fontSize:20,fontWeight:800,color:P,marginTop:8}}>{title||'이용 안내'}</div>
+        <div style={{fontSize:13,color:'#888',marginTop:6,lineHeight:1.6}}>간단한 퀴즈를 풀고 동의하면<br/>주문을 시작할 수 있어요</div>
+      </div>
+      {qs.map((x,i)=>(
+        <div key={i} style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:12}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:10,lineHeight:1.5}}>Q{i+1}. {x.q}</div>
+          {(x.options||[]).map((o,oi)=>o?(
+            <button key={oi} onClick={()=>setPicked(p=>({...p,[i]:oi}))} style={{display:'block',width:'100%',textAlign:'left',padding:'11px 12px',marginBottom:6,borderRadius:10,border:`1.5px solid ${picked[i]===oi?P:'#ddd'}`,background:picked[i]===oi?PLIGHT:'#fff',color:'#222',fontSize:14,cursor:'pointer',fontWeight:picked[i]===oi?700:400}}>{o}</button>
+          ):null)}
+        </div>
+      ))}
+      {tried&&!allCorrect&&<div style={{fontSize:13,color:'#e53935',textAlign:'center',marginBottom:10,fontWeight:700}}>틀린 문제가 있어요. 다시 선택해 보세요! 🙂</div>}
+      {needConsent&&(
+        <div onClick={()=>setChecked(c=>!c)} style={{display:'flex',alignItems:'flex-start',gap:10,padding:14,borderRadius:14,border:`1.5px solid ${checked?P:'#ddd'}`,background:checked?PLIGHT:'#fff',marginBottom:16,cursor:'pointer'}}>
+          <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${checked?P:'#bbb'}`,background:checked?P:'#fff',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,marginTop:1}}>{checked?'✓':''}</div>
+          <div style={{fontSize:13,lineHeight:1.6,color:'#333'}}>{consentText}</div>
+        </div>
+      )}
+      <button onClick={go} disabled={!canGo} style={{width:'100%',height:50,borderRadius:25,border:'none',background:canGo?P:'#e0e0e0',color:'#fff',fontSize:16,fontWeight:700,cursor:canGo?'pointer':'default'}}>확인하고 계속하기 →</button>
+    </div>
+  );
+}
+
 // ─── LOGIN ────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [name,setName] = useState("");
@@ -648,7 +703,6 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
       <div style={{flex:1,overflowY:'auto',minHeight:0}}>
         {/* 배너 */}
         <div style={{margin:'10px 16px',borderRadius:18,background:`linear-gradient(135deg,${P},${PGRAD})`,overflow:'hidden',position:'relative',minHeight:110,flexShrink:0}}>
-          <BannerFx banner={banner} themeColor={P} />
           {bannerImg && <img src={bannerImg} alt="" onError={e=>e.target.style.display='none'} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} />}
           <div style={{padding:'18px 22px',color:'#fff',position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
             <div style={{flex:1}}>
@@ -656,7 +710,7 @@ function HomeScreen({ school, banner, categories, onSelect, onAdmin, cartCount, 
               <div style={{fontSize:19,fontWeight:800,lineHeight:1.35}}>{banner?.headline || `${schoolName} 음료를 주문하세요 🍹`}</div>
               <div style={{fontSize:banner?.subtextStyle?.size||12,marginTop:6,opacity:0.85,color:banner?.subtextStyle?.color||'rgba(255,255,255,0.85)',fontWeight:banner?.subtextStyle?.bold?700:400,fontStyle:banner?.subtextStyle?.italic?'italic':'normal',textDecoration:banner?.subtextStyle?.underline?'underline':'none'}}>{banner?.subtext || '매일 신선하게 준비됩니다'}</div>
             </div>
-            <BannerDrink id={banner?.drinkIcon} />
+            {!bannerImg && <div style={{fontSize:44,opacity:0.3}}>☕</div>}
           </div>
         </div>
 
@@ -1478,7 +1532,7 @@ function CouponManager() {
   );
 }
 function SettingsTab({ settings, onSave }) {
-  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15,slotLimit:settings.slotLimit??3,orderStartEnabled:settings.orderStartEnabled??false,orderStartTime:settings.orderStartTime||'08:00'});
+  const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15,slotLimit:settings.slotLimit??3,orderStartEnabled:settings.orderStartEnabled??false,orderStartTime:settings.orderStartTime||'08:00',quizEnabled:settings.quizEnabled??false,quizTitle:settings.quizTitle||INIT_SETTINGS.quizTitle,quizQuestions:(settings.quizQuestions&&settings.quizQuestions.length)?settings.quizQuestions:INIT_SETTINGS.quizQuestions,consentText:settings.consentText??INIT_SETTINGS.consentText});
   const [saved,setSaved]=useState(false);
   const [testing,setTesting]=useState(null);
   const [testResult,setTestResult]=useState(null);
@@ -1550,8 +1604,6 @@ function SettingsTab({ settings, onSave }) {
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:4}}>서브 문구</div>
         <input value={form.banner?.subtext||''} onChange={e=>upBanner('subtext',e.target.value)} placeholder="매일 신선하게 준비됩니다" style={S.input} />
         <TextStyleBar label="서브 문구 스타일" value={form.banner?.subtextStyle||{}} onChange={v=>upBanner('subtextStyle',v)} />
-        <BannerFxSettings banner={form.banner} themeColor={P} onChange={upBanner} />
-        <BannerDrinkPicker value={form.banner?.drinkIcon} themeColor={P} onChange={upBanner} />
         <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:6}}>배너 이미지</div>
         {form.banner?.image&&(
           <div style={{marginBottom:8,position:'relative'}}>
@@ -1566,15 +1618,11 @@ function SettingsTab({ settings, onSave }) {
         <input value={form.banner?.image?.startsWith('data:')?'':(form.banner?.image||'')} onChange={e=>upBanner('image',e.target.value)} placeholder="또는 이미지 URL 입력" style={{...S.input,marginTop:8}} />
         {/* 미리보기 */}
         <div style={{marginTop:10,borderRadius:12,background:`linear-gradient(135deg,${P},${PGRAD})`,padding:'12px 16px',color:'#fff',overflow:'hidden',position:'relative',minHeight:60}}>
-          <BannerFx banner={form.banner} themeColor={P} />
           {form.banner?.image&&<img src={form.banner.image} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.25}} onError={e=>e.target.style.display='none'} />}
-          <div style={{position:'relative',zIndex:1,display:'flex',alignItems:'center'}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:10,opacity:0.8,marginBottom:2}}>음료 주문 서비스</div>
-              <div style={{fontSize:14,fontWeight:800}}>{form.banner?.headline||'헤드라인'}</div>
-              <div style={{fontSize:11,opacity:0.8,marginTop:3}}>{form.banner?.subtext||'서브 문구'}</div>
-            </div>
-            <BannerDrink id={form.banner?.drinkIcon} size={48} />
+          <div style={{position:'relative',zIndex:1}}>
+            <div style={{fontSize:10,opacity:0.8,marginBottom:2}}>음료 주문 서비스</div>
+            <div style={{fontSize:14,fontWeight:800}}>{form.banner?.headline||'헤드라인'}</div>
+            <div style={{fontSize:11,opacity:0.8,marginTop:3}}>{form.banner?.subtext||'서브 문구'}</div>
           </div>
         </div>
       </div>
@@ -1668,6 +1716,46 @@ function SettingsTab({ settings, onSave }) {
           <button onClick={testKk} disabled={!form.kakao.accessToken||!!testing} style={{...S.testBtn,background:'#FAE100',color:'#3C1E1E',opacity:!form.kakao.accessToken||testing?0.5:1}}>{testing==='kk'?'⏳ 테스트 중...':'🔗 연결 테스트'}</button>
           {testResult?.s==='kk'&&<TestBadge result={testResult} />}
         </>}
+      </div>
+
+      {/* 첫 화면 퀴즈 · 동의 */}
+      <SH>📋 첫 화면 퀴즈 · 동의</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:form.quizEnabled?12:0}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>퀴즈·동의 화면 사용</div>
+            <div style={{fontSize:11,color:'#888',marginTop:2}}>켜면 앱 첫 화면에 퀴즈와 동의가 먼저 나옵니다</div>
+          </div>
+          <button onClick={()=>setForm(p=>({...p,quizEnabled:!p.quizEnabled}))} style={{width:48,height:26,borderRadius:13,border:'none',background:form.quizEnabled?P:'#ccc',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}}>
+            <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.quizEnabled?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
+          </button>
+        </div>
+        {form.quizEnabled&&(
+          <div>
+            <div style={{fontSize:12,color:'#555',marginBottom:4}}>화면 제목</div>
+            <input value={form.quizTitle||''} onChange={e=>setForm(p=>({...p,quizTitle:e.target.value}))} style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,marginBottom:12}} />
+            {(form.quizQuestions||[]).map((qq,qi)=>(
+              <div key={qi} style={{background:'#fff',borderRadius:12,padding:10,marginBottom:10,border:'1px solid #eee'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                  <div style={{fontSize:12,fontWeight:700,color:P}}>문제 {qi+1}</div>
+                  <button onClick={()=>setForm(p=>({...p,quizQuestions:p.quizQuestions.filter((_,k)=>k!==qi)}))} style={{border:'none',background:'none',color:'#e53935',fontSize:12,cursor:'pointer'}}>삭제</button>
+                </div>
+                <input value={qq.q} placeholder="문제를 입력하세요" onChange={e=>setForm(p=>({...p,quizQuestions:p.quizQuestions.map((x,k)=>k===qi?{...x,q:e.target.value}:x)}))} style={{width:'100%',boxSizing:'border-box',padding:'9px',border:'1.5px solid #ddd',borderRadius:8,fontSize:16,marginBottom:8}} />
+                {(qq.options||[]).map((o,oi)=>(
+                  <div key={oi} style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
+                    <button onClick={()=>setForm(p=>({...p,quizQuestions:p.quizQuestions.map((x,k)=>k===qi?{...x,answer:oi}:x)}))} title="정답으로 지정" style={{width:26,height:26,borderRadius:50,border:`2px solid ${qq.answer===oi?P:'#ccc'}`,background:qq.answer===oi?P:'#fff',color:'#fff',fontSize:13,cursor:'pointer',flexShrink:0}}>{qq.answer===oi?'✓':''}</button>
+                    <input value={o} placeholder={`보기 ${oi+1}`} onChange={e=>setForm(p=>({...p,quizQuestions:p.quizQuestions.map((x,k)=>k===qi?{...x,options:x.options.map((y,j)=>j===oi?e.target.value:y)}:x)}))} style={{flex:1,minWidth:0,padding:'8px',border:'1.5px solid #ddd',borderRadius:8,fontSize:16}} />
+                  </div>
+                ))}
+                <div style={{fontSize:11,color:'#888'}}>동그라미(✓)를 누르면 정답으로 지정됩니다 · 비워 둔 보기는 표시되지 않아요</div>
+              </div>
+            ))}
+            <button onClick={()=>setForm(p=>({...p,quizQuestions:[...(p.quizQuestions||[]),{q:'',options:['','','',''],answer:0}]}))} style={{width:'100%',height:40,borderRadius:10,border:`1.5px dashed ${P}`,background:'#fff',color:P,fontSize:13,fontWeight:700,cursor:'pointer',marginBottom:12}}>＋ 문제 추가</button>
+            <div style={{fontSize:12,color:'#555',marginBottom:4}}>동의 문구 (비우면 동의 칸이 사라집니다)</div>
+            <textarea value={form.consentText||''} onChange={e=>setForm(p=>({...p,consentText:e.target.value}))} rows={3} style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,resize:'vertical',fontFamily:'inherit'}} />
+            <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
+          </div>
+        )}
       </div>
 
       <button onClick={save} style={{width:'100%',height:48,borderRadius:24,border:'none',background:saved?'#4caf50':P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',transition:'background 0.3s'}}>{saved?'✅ 저장 완료':'전체 설정 저장'}</button>
