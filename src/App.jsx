@@ -99,6 +99,10 @@ function getStoredUser() { try { return localStorage.getItem('hb_user'); } catch
 function setStoredUser(n) { try { localStorage.setItem('hb_user', n); } catch {} }
 function getQuizPassed() { try { return sessionStorage.getItem('hb_quiz_passed') === '1'; } catch { return false; } }
 function setQuizPassedStore() { try { sessionStorage.setItem('hb_quiz_passed','1'); } catch {} }
+// 장애이해 미션: 이벤트(미션 ID)마다 기기당 한 번
+const missionKey = id => `daun_mission_${id}`;
+function getMissionDone(id) { try { return localStorage.getItem(missionKey(id)) === '1'; } catch { return false; } }
+function setMissionDone(id) { try { localStorage.setItem(missionKey(id),'1'); } catch { /* 저장 불가(사생활 모드 등) 시 무시 */ } }
 
 async function getStoredSettings() {
   try { const s=await getDoc(doc(db,'config','settings')); return s.exists()?s.data():null; } catch { return null; }
@@ -400,6 +404,9 @@ const INIT_SETTINGS = {
     { q: "주문한 음료는 정해진 시간에 어떻게 받나요?", options: ["아무 때나 가져간다", "선택한 수령 시간에 맞춰 받는다", "다음 날 받는다", "친구가 대신 가져간다"], answer: 1 },
   ],
   consentText: "주문 시 입력한 이름과 주문 내역이 스쿨카페 운영(주문 확인·수령 안내) 목적으로만 사용되는 것에 동의합니다.",
+  missionEnabled: false,
+  missionId: "vision-2026-11",
+  missionUrl: "/missions/vision/index.html",
 };
 
 // ─── APP ──────────────────────────────────────────────────────
@@ -423,6 +430,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [adminLoginModal, setAdminLoginModal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [missionOpen, setMissionOpen] = useState(false);
 
   useEffect(() => {
     const fallback = setTimeout(() => { console.warn('Firebase timeout'); setBooting(false); }, 10000);
@@ -537,6 +545,27 @@ export default function App() {
 
   const handleSaveSettings = async (s) => { setSettings(s); await saveStoredSettings(s); notify("설정 저장됨 ✅"); };
 
+  // 주문하기: 미션 이벤트가 켜져 있고 아직 안 했으면 미션 먼저
+  const handleCheckout = () => {
+    if (settings.missionEnabled && settings.missionId && !getMissionDone(settings.missionId)) setMissionOpen(true);
+    else setOrderModal(true);
+  };
+
+  // 미션 게임(iframe)이 보내는 완료 메시지 받기
+  useEffect(() => {
+    const onMsg = async (e) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type !== 'DAUN_MISSION_COMPLETE' || e.data.missionId !== settings.missionId) return;
+      setMissionDone(settings.missionId);
+      setMissionOpen(false);
+      setOrderModal(true);
+      try { await addDoc(collection(db,'missionLogs'), { missionId: settings.missionId, userName: userName||'', ...(e.data.result||{}), at: new Date().toISOString() }); }
+      catch (err) { console.error('미션 기록 실패', err); }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [settings.missionId, userName]);
+
   if (booting) return <div style={S.shell}><div style={{...S.phone,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48}}>🥤</div><div style={{color:'#888',marginTop:10}}>로딩 중...</div></div></div></div>;
   if (settings.quizEnabled && !quizPassed) return <div style={S.shell}><div style={S.phone}><QuizConsentScreen title={settings.quizTitle} questions={settings.quizQuestions} consentText={settings.consentText} onPass={()=>{ setQuizPassedStore(); setQuizPassed(true); }} /></div></div>;
   if (!userName) return <div style={S.shell}><div style={S.phone}><LoginScreen onLogin={handleLogin} /></div></div>;
@@ -548,7 +577,7 @@ export default function App() {
         {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} deliveryHours={settings.deliveryHours} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(d.visible===false) return false; if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
-        {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={()=>setOrderModal(true)} />}
+        {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={handleCheckout} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
         {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={async id=>{
   const updated=drinks.filter(d=>d.id!==id);
@@ -571,6 +600,12 @@ export default function App() {
 }} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
         {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} orderStartEnabled={settings.orderStartEnabled} orderStartTime={settings.orderStartTime} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
+        {missionOpen && (
+          <div style={{position:'fixed',inset:0,zIndex:1000,background:'#fff',display:'flex',flexDirection:'column'}}>
+            <button onClick={()=>setMissionOpen(false)} style={{padding:'12px 16px',border:'none',borderBottom:'1px solid #eee',background:'#f7f7f7',color:'#333',fontSize:14,fontWeight:600,textAlign:'left',cursor:'pointer'}}>← 장바구니로 돌아가기</button>
+            <iframe src={`${settings.missionUrl||INIT_SETTINGS.missionUrl}?mission=${encodeURIComponent(settings.missionId)}`} title="장애이해 미션" allow="autoplay" style={{flex:1,border:0,width:'100%'}} />
+          </div>
+        )}
         {toast && <div style={S.toast}>{toast}</div>}
         {!["detail","adminEdit"].includes(screen) && (()=>{
           const dlimit=settings.dailyLimit??15;
@@ -1754,6 +1789,28 @@ function SettingsTab({ settings, onSave }) {
             <div style={{fontSize:12,color:'#555',marginBottom:4}}>동의 문구 (비우면 동의 칸이 사라집니다)</div>
             <textarea value={form.consentText||''} onChange={e=>setForm(p=>({...p,consentText:e.target.value}))} rows={3} style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,resize:'vertical',fontFamily:'inherit'}} />
             <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
+          </div>
+        )}
+      </div>
+
+      {/* 장애이해 미션 이벤트 */}
+      <SH>🧑‍🦯 장애이해 미션 이벤트</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:form.missionEnabled?12:0}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>미션 완료 후 주문하기</div>
+            <div style={{fontSize:11,color:'#888',marginTop:2}}>켜면 '주문하기'를 누를 때 시각장애 이해 미션(약 5분)이 먼저 나옵니다</div>
+          </div>
+          <button onClick={()=>setForm(p=>({...p,missionEnabled:!p.missionEnabled}))} aria-label="미션 이벤트 켜기/끄기" style={{width:48,height:26,borderRadius:13,border:'none',background:form.missionEnabled?P:'#ccc',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}}>
+            <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.missionEnabled?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
+          </button>
+        </div>
+        {form.missionEnabled&&(
+          <div>
+            <div style={{fontSize:12,color:'#555',marginBottom:4}}>미션 ID (바꾸면 모든 학생이 미션을 다시 해야 합니다)</div>
+            <input value={form.missionId||''} onChange={e=>setForm(p=>({...p,missionId:e.target.value.trim()}))} placeholder="예: vision-2026-11" style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,marginBottom:10}} />
+            <a href={`${form.missionUrl||INIT_SETTINGS.missionUrl}?mission=preview`} target="_blank" rel="noreferrer" style={{display:'block',textAlign:'center',fontSize:13,color:P,fontWeight:700,marginBottom:6}}>🎮 미션 게임 미리 해보기</a>
+            <div style={{fontSize:11,color:P,marginTop:4,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
           </div>
         )}
       </div>

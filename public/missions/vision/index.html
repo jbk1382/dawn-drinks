@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>하늘이의 등굣길</title>
+<style>
+:root{--p:#2e7d5b;--pd:#1f5c42;--pl:#e8f5ee;--ink:#1d2321;--mut:#66706b;--bg:#eef2f0;--card:#fff;--line:#dfe6e2;--bad:#d9534f;--badl:#fdecea;--warn:#f2b632}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+.phone{max-width:440px;margin:0 auto;min-height:100dvh;background:var(--card);display:flex;flex-direction:column;box-shadow:0 0 0 1px var(--line)}
+.top{position:sticky;top:0;background:var(--card);padding:12px 16px 10px;border-bottom:1px solid var(--line);z-index:2}
+.steps{display:flex;gap:6px}
+.steps div{flex:1;font-size:11px;color:var(--mut);text-align:center}
+.steps div i{display:block;height:5px;border-radius:3px;background:var(--line);margin-bottom:4px}
+.steps div.on{color:var(--pd);font-weight:700}.steps div.on i{background:var(--p)}
+.steps div.done i{background:#9fd0b6}
+.screen{padding:20px 16px 28px;flex:1;display:flex;flex-direction:column;gap:14px}
+h1{font-size:26px;margin:4px 0 0;line-height:1.3}
+h2{font-size:21px;margin:0;line-height:1.35}
+h1:focus,h2:focus{outline:none}
+p{margin:0;line-height:1.65}
+.mut{color:var(--mut);font-size:14px}
+.tag{display:inline-block;font-size:12px;font-weight:700;color:var(--pd);background:var(--pl);padding:4px 10px;border-radius:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.card.soft{background:var(--pl);border-color:transparent}
+.fact{background:#fff8e6;border:1px solid #f6e2a8;border-radius:16px;padding:12px 14px;font-size:14px;line-height:1.6}
+.fact b{display:block;font-size:12px;color:#9a6b00;margin-bottom:2px}
+.btn{appearance:none;border:none;border-radius:14px;background:var(--p);color:#fff;font:inherit;font-size:17px;font-weight:700;padding:15px 18px;cursor:pointer;width:100%}
+.btn:active{transform:scale(.98)}
+.btn.ghost{background:var(--pl);color:var(--pd)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:focus-visible,.key:focus-visible,.opt:focus-visible,.spot:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.spacer{flex:1}
+.hero{font-size:64px;text-align:center;line-height:1.1;margin-top:8px}
+.row{display:flex;gap:10px;align-items:center}
+label.tog{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:15px}
+label.tog input{width:22px;height:22px;accent-color:var(--p)}
+/* stage 1 */
+.field{background:#0c100f;border-radius:20px;min-height:250px;position:relative;color:#d7efe3;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:44px 14px 16px;overflow:hidden}
+.fieldtop{position:absolute;top:12px;left:14px;right:14px;display:flex;justify-content:space-between;font-size:14px;color:#9fb8ac}
+.eye{font-size:44px;opacity:.9}
+.sig{min-height:22px;font-size:14px;color:#8fe0b8;margin-top:10px;text-align:center}
+.cap{min-height:48px;font-size:16px;font-weight:600;text-align:center;margin-top:6px;line-height:1.5}
+.cap.flash{animation:fl .35s}
+@keyframes fl{from{opacity:.2;transform:translateY(3px)}to{opacity:1;transform:none}}
+.field.bump{animation:sh .25s}
+@keyframes sh{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:300px;margin:0 auto;width:100%}
+.key{appearance:none;border:none;border-radius:14px;background:#24302b;color:#fff;font-size:26px;height:62px;cursor:pointer}
+.key:active{background:var(--p)}
+.cane{background:#f2b632;color:#3a2a00}
+.cane small{font-weight:400;opacity:.7;font-size:13px}
+.mapgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;max-width:300px;margin:0 auto;width:100%}
+.cell{aspect-ratio:1;border-radius:9px;background:#eef2f0;display:flex;align-items:center;justify-content:center;font-size:21px}
+.cell.vis{background:#cfe9db}
+.cell.hit{background:#f8d2cf;box-shadow:inset 0 0 0 2px var(--bad)}
+.stat{display:flex;gap:10px}
+.stat div{flex:1;background:var(--pl);border-radius:14px;padding:10px;text-align:center}
+.stat b{display:block;font-size:24px;color:var(--pd)}
+.stat span{font-size:12px;color:var(--mut)}
+/* stage 2 */
+.scene{font-size:48px;text-align:center}
+.bubble{background:#f3f5f4;border-radius:4px 18px 18px 18px;padding:12px 14px;font-size:16px;line-height:1.55;position:relative}
+.who{font-size:13px;font-weight:700;color:var(--pd);margin-bottom:4px}
+.opts{display:flex;flex-direction:column;gap:9px}
+.opt{appearance:none;text-align:left;border:1.5px solid var(--line);background:#fff;border-radius:14px;padding:13px 14px;font:inherit;font-size:15px;line-height:1.5;cursor:pointer;color:var(--ink)}
+.opt.wrong{border-color:var(--bad);background:var(--badl);color:#7a2e2b}
+.opt.right{border-color:var(--p);background:var(--pl);color:var(--pd);font-weight:700}
+.opt:disabled{cursor:default}
+.fb{border-radius:14px;padding:12px 14px;font-size:15px;line-height:1.6}
+.fb.bad{background:var(--badl);color:#7a2e2b}
+.fb.good{background:var(--pl);color:var(--pd)}
+/* stage 3 */
+.board{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.spot{appearance:none;border:1.5px solid var(--line);background:#fff;border-radius:16px;padding:14px 8px;font:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--ink);min-height:112px;justify-content:center}
+.spot .ic{font-size:38px}
+.spot .nm{font-size:14px;font-weight:600;text-align:center}
+.spot.fixed{border-color:var(--p);background:var(--pl)}
+.spot.ok{border-color:#c9d7cf;background:#f7faf8}
+.spot .st{font-size:12px;color:var(--pd);font-weight:700;min-height:16px}
+.counter{font-size:15px;font-weight:700;color:var(--pd)}
+.sheetbg{position:fixed;inset:0;background:rgba(10,20,15,.45);display:flex;align-items:flex-end;justify-content:center;z-index:10}
+.sheet{background:#fff;width:100%;max-width:440px;border-radius:22px 22px 0 0;padding:20px 16px 26px;display:flex;flex-direction:column;gap:12px;animation:up .22s ease-out;max-height:88dvh;overflow:auto}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.sr{background:#13201a;color:#bff0d6;border-radius:12px;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:14px}
+/* finale */
+ul.take{margin:0;padding-left:20px;line-height:1.8;font-size:15px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app" class="phone"></div>
+<div id="live" class="sr-only" aria-live="polite"></div>
+<script>
+'use strict';
+/* ───────────── 설정 · 앱 연동 ───────────── */
+const params = new URLSearchParams(location.search);
+const MISSION_ID = params.get('mission') || 'vision-2026';
+const EMBEDDED = window.parent !== window || !!window.ReactNativeWebView;
+
+// 미션 완료를 앱(부모 창)에 알림. 앱 쪽에서는 type === 'DAUN_MISSION_COMPLETE' 메시지를 받으면 주문 화면을 연다.
+function reportComplete(){
+  const msg = {
+    type: 'DAUN_MISSION_COMPLETE',
+    missionId: MISSION_ID,
+    result: {
+      durationSec: Math.round((Date.now() - S.startedAt) / 1000),
+      bumpsWithoutTools: S.s1.bumpsA,
+      bumpsWithTools: S.s1.bumpsB,
+      quizFirstTry: S.s2.firstTry,
+      quizTotal: SCENES.length,
+      barriersFixed: S.s3.fixed.size
+    }
+  };
+  try { if (window.parent !== window) window.parent.postMessage(msg, location.origin); } catch (e) {}
+  try { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg)); } catch (e) {}
+}
+
+/* ───────────── 상태 ───────────── */
+const S = { captions: true, startedAt: Date.now(), s1: { bumpsA: 0, bumpsB: 0, reachedA: false }, s2: { firstTry: 0 }, s3: { fixed: new Set() } };
+let timers = [];
+let R = null;      // 1단계 라운드 상태
+let mode = 'intro';
+const $app = document.getElementById('app');
+const $live = document.getElementById('live');
+
+function clearTimers(){ timers.forEach(t => clearInterval(t)); timers = []; stopAmbient(); }
+function render(html){
+  $app.innerHTML = html;
+  window.scrollTo(0, 0);
+  const h = $app.querySelector('h1,h2');
+  if (h){ h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
+}
+function announce(t){ $live.textContent = ''; setTimeout(() => { $live.textContent = t; }, 30); }
+function vibrate(ms){ try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(ms); } catch (e) {} }
+
+/* ───────────── 소리 (Web Audio) ───────────── */
+let AC = null, master = null, amb = null;
+function audio(){
+  if (!AC){
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return null;
+    AC = new C(); master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+  }
+  if (AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function out(node, pan){
+  if (AC.createStereoPanner){ const p = AC.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan || 0)); node.connect(p); p.connect(master); }
+  else node.connect(master);
+}
+function tone({ freq = 440, dur = .15, type = 'sine', gain = .3, pan = 0, when = 0, slideTo = null }){
+  const ac = audio(); if (!ac) return;
+  const t = ac.currentTime + when, o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(gain, .0002), t + .006); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); out(g, pan); o.start(t); o.stop(t + dur + .05);
+}
+function noiseBuf(sec, decay){
+  const len = Math.floor(AC.sampleRate * sec), b = AC.createBuffer(1, len, AC.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (decay ? 1 - i / len : 1);
+  return b;
+}
+function noise({ dur = .1, gain = .2, freq = 1000, q = 1, pan = 0, when = 0, type = 'bandpass' }){
+  const ac = audio(); if (!ac) return;
+  const s = ac.createBufferSource(); s.buffer = noiseBuf(dur, true);
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = ac.createGain(); g.gain.value = gain;
+  s.connect(f); f.connect(g); out(g, pan); s.start(ac.currentTime + when);
+}
+function startAmbient(){
+  const ac = audio(); if (!ac || amb) return;
+  const s = ac.createBufferSource(); s.buffer = noiseBuf(2, false); s.loop = true;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 450;
+  const g = ac.createGain(); g.gain.value = .07;
+  s.connect(f); f.connect(g); g.connect(master); s.start(); amb = s;
+}
+function stopAmbient(){ if (amb){ try { amb.stop(); } catch (e) {} amb = null; } }
+const SFX = {
+  step(){ noise({ dur: .07, gain: .3, freq: 450, q: .8 }); },
+  thud(){ tone({ freq: 95, slideTo: 45, dur: .25, gain: .7 }); noise({ dur: .12, gain: .35, freq: 220, type: 'lowpass' }); vibrate(120); },
+  caneEmpty(pan, when){ tone({ freq: 2600, dur: .035, type: 'triangle', gain: .12, pan, when }); },
+  caneHit(pan, when){ tone({ freq: 1250, dur: .05, type: 'square', gain: .2, pan, when }); tone({ freq: 1250, dur: .05, type: 'square', gain: .2, pan, when: when + .08 }); },
+  signal(pan, g){ tone({ freq: 1050, dur: .11, type: 'square', gain: .32 * g, pan }); tone({ freq: 1050, dur: .11, type: 'square', gain: .32 * g, pan, when: .17 }); },
+  good(){ [660, 880, 1175].forEach((f, i) => tone({ freq: f, dur: .2, gain: .2, when: i * .1 })); },
+  soft(){ tone({ freq: 330, dur: .18, gain: .15 }); },
+  fix(){ tone({ freq: 700, dur: .1, gain: .2 }); tone({ freq: 1050, dur: .2, gain: .2, when: .09 }); }
+};
+
+/* ───────────── 음성 (TTS) ───────────── */
+let koVoice = null;
+function loadVoices(){ try { koVoice = speechSynthesis.getVoices().find(v => /^ko/i.test(v.lang)) || null; } catch (e) {} }
+if ('speechSynthesis' in window){ loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function speak(text, rate = 1.05){
+  try {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text); u.lang = 'ko-KR'; u.rate = rate; if (koVoice) u.voice = koVoice;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+/* ───────────── 공통 UI ───────────── */
+const STEP_NAMES = ['소리로 길찾기', '친구와 하루', '장벽 고치기'];
+function hdr(n){
+  return `<div class="top"><div class="steps" aria-label="진행 단계 ${n} / 3">${STEP_NAMES.map((t, i) =>
+    `<div class="${i + 1 === n ? 'on' : i + 1 < n ? 'done' : ''}"><i></i>${i + 1}. ${t}</div>`).join('')}</div></div>`;
+}
+function on(id, fn){ const el = document.getElementById(id); if (el) el.onclick = fn; }
+
+/* ───────────── 0. 시작 ───────────── */
+function intro(){
+  mode = 'intro'; clearTimers();
+  render(`
+  <div class="screen">
+    <div class="hero" aria-hidden="true">🧑‍🦯</div>
+    <span class="tag" style="align-self:center">장애이해 미션 · 약 5분</span>
+    <h1 style="text-align:center">하늘이의 등굣길</h1>
+    <p style="text-align:center">하늘이는 앞이 보이지 않는 우리 학교 친구예요.<br>하늘이가 매일 <b>어떻게</b> 길을 찾고 생활하는지<br>같은 방법으로 직접 해 봐요.</p>
+    <div class="card soft">
+      <p style="font-size:15px">🎧 <b>이어폰을 끼면</b> 소리 방향을 더 잘 들을 수 있어요.<br>왼쪽 → 오른쪽 순서로 소리가 들리는지 확인해 보세요.</p>
+      <div class="row" style="margin-top:10px"><button class="btn ghost" id="test">🔊 소리 테스트</button></div>
+    </div>
+    <label class="tog card">소리 자막 보기 <small class="mut">(소리를 글자로도 보여줘요)</small><input type="checkbox" id="capt" ${S.captions ? 'checked' : ''}></label>
+    <div class="spacer"></div>
+    <button class="btn" id="go">시작하기</button>
+  </div>`);
+  document.getElementById('capt').onchange = e => { S.captions = e.target.checked; };
+  on('test', () => { SFX.signal(-1, 1); setTimeout(() => SFX.signal(1, 1), 700); announce('왼쪽, 그리고 오른쪽에서 신호음이 납니다'); });
+  on('go', () => { audio(); S.startedAt = Date.now(); stage1Intro(); });
+}
+
+/* ───────────── 1. 소리로 길찾기 ───────────── */
+const COLS = 5, ROWS = 6, START = [2, 5];
+const MAPS = {
+  A: { goal: [4, 0], time: 20,
+       obs: [[2, 4], [1, 2], [3, 2], [4, 3], [0, 1], [3, 0]],
+       items: ['🚲', '📦', '🪧', '🛴', '🪴', '🗑️'] },
+  B: { goal: [0, 0],
+       obs: [[2, 4], [1, 3], [0, 2], [3, 2], [2, 1]],
+       items: ['🚲', '🛴', '🪧', '📦', '🪴'] }
+};
+function stage1Intro(){
+  mode = 'text';
+  render(`${hdr(1)}
+  <div class="screen">
+    <span class="tag">1단계</span>
+    <h2>소리로 건너는 횡단보도</h2>
+    <p>학교 앞 횡단보도 신호등까지 가야 해요.<br>하지만 화면은 <b>깜깜</b>해요.</p>
+    <div class="card"><p style="font-size:15px">⬆️⬅️➡️⬇️ 버튼(또는 키보드 방향키)으로 한 칸씩 움직여요.<br>길에는 자전거, 입간판 같은 물건이 놓여 있어요.</p></div>
+    <p class="mut">첫 번째는 아무 정보 없이 20초 동안 도전해요.</p>
+    <div class="spacer"></div>
+    <button class="btn" id="go">도전하기</button>
+  </div>`);
+  on('go', () => playRound('A'));
+}
+function cellKey(x, y){ return x + ',' + y; }
+function obstacleAt(x, y){ return R.m.obs.findIndex(o => o[0] === x && o[1] === y); }
+function blocked(x, y){ return x < 0 || x >= COLS || y < 0 || y >= ROWS || obstacleAt(x, y) >= 0; }
+function caption(t){
+  const el = document.getElementById('cap'); if (!el) return;
+  el.textContent = S.captions ? t : '';
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
+function playRound(r){
+  clearTimers(); mode = 'play';
+  const m = MAPS[r];
+  R = { r, m, pos: START.slice(), visited: new Set([cellKey(...START)]), hits: new Set(), bumps: 0, done: false, left: m.time || 0 };
+  render(`${hdr(1)}
+  <div class="screen">
+    <h2>${r === 'A' ? '라운드 1 · 아무 정보 없이' : '라운드 2 · 흰지팡이 + 음향신호기'}</h2>
+    <p class="mut">${r === 'A' ? '신호등이 어디 있는지 몰라요. 그래도 찾아가 보세요!' : '🦯 지팡이로 앞과 양옆을 살피고, 🔊 신호음이 나는 쪽으로 가세요.'}</p>
+    <div class="field" id="field">
+      <div class="fieldtop"><span>${r === 'A' ? `⏱ <b id="tm">${m.time}</b>초` : '🎧 소리를 따라가요'}</span><span>💥 부딪힘 <b id="bp">0</b></span></div>
+      <div class="eye" aria-hidden="true">${r === 'A' ? '🌑' : '🔊'}</div>
+      <div class="sig" id="sig" aria-hidden="true"></div>
+      <div class="cap" id="cap" role="status"></div>
+    </div>
+    <div class="pad">
+      <span></span><button class="key" data-mv="0,-1" aria-label="앞으로 한 칸">↑</button><span></span>
+      <button class="key" data-mv="-1,0" aria-label="왼쪽으로 한 칸">←</button><button class="key" data-mv="0,1" aria-label="뒤로 한 칸">↓</button><button class="key" data-mv="1,0" aria-label="오른쪽으로 한 칸">→</button>
+    </div>
+    ${r === 'B' ? '<button class="btn cane" id="cane">🦯 지팡이로 살피기 <small>(스페이스바)</small></button>' : ''}
+  </div>`);
+  $app.querySelectorAll('[data-mv]').forEach(b => b.onclick = () => { const [dx, dy] = b.dataset.mv.split(',').map(Number); move(dx, dy); });
+  on('cane', cane);
+  startAmbient();
+  if (r === 'A'){
+    caption('깜깜해요… 어디로 가야 할까요?');
+    timers.push(setInterval(() => {
+      R.left--; const tm = document.getElementById('tm'); if (tm) tm.textContent = R.left;
+      if (R.left <= 0) endRound(false);
+    }, 1000));
+  } else {
+    caption('삐뽀삐뽀 신호음이 들리나요? 지팡이로 먼저 살펴보세요.');
+    signalTick();
+    timers.push(setInterval(signalTick, 1000));
+  }
+}
+function signalTick(){
+  if (!R || R.done || R.r !== 'B') return;
+  const [x, y] = R.pos, [gx, gy] = R.m.goal, dx = gx - x, dist = Math.abs(dx) + Math.abs(gy - y);
+  SFX.signal(Math.max(-1, Math.min(1, dx / 3)), Math.max(.3, 1 - dist * .11));
+  const dir = dx < 0 ? '왼쪽 앞' : dx > 0 ? '오른쪽 앞' : '바로 앞';
+  const far = dist <= 2 ? '아주 가까워요' : dist <= 4 ? '가까워요' : '멀어요';
+  const sig = document.getElementById('sig'); if (sig) sig.textContent = S.captions ? `🔊 신호음 · ${dir} · ${far}` : '';
+}
+function move(dx, dy){
+  if (!R || R.done) return;
+  const [x, y] = R.pos, nx = x + dx, ny = y + dy;
+  if (blocked(nx, ny)){
+    R.bumps++; const oi = obstacleAt(nx, ny); if (oi >= 0) R.hits.add(oi);
+    SFX.thud();
+    const f = document.getElementById('field'); if (f){ f.classList.remove('bump'); void f.offsetWidth; f.classList.add('bump'); }
+    document.getElementById('bp').textContent = R.bumps;
+    caption(oi >= 0 ? '쿵! 무언가에 부딪혔어요' : '쿵! 더 갈 수 없어요');
+    return;
+  }
+  R.pos = [nx, ny]; R.visited.add(cellKey(nx, ny)); SFX.step();
+  if (nx === R.m.goal[0] && ny === R.m.goal[1]) return endRound(true);
+  if (R.r === 'A'){
+    const lines = ['발소리만 들려요…', '여기가 어디쯤일까요?', '방향을 알 수가 없어요', '앞에 뭐가 있을지 몰라요'];
+    caption(lines[Math.floor(Math.random() * lines.length)]);
+  } else caption('한 걸음 이동');
+}
+function cane(){
+  if (!R || R.done || R.r !== 'B') return;
+  const [x, y] = R.pos;
+  const dirs = [{ n: '왼쪽', d: [-1, 0], pan: -.85 }, { n: '앞', d: [0, -1], pan: 0 }, { n: '오른쪽', d: [1, 0], pan: .85 }];
+  const res = dirs.map((o, i) => {
+    const hit = blocked(x + o.d[0], y + o.d[1]);
+    hit ? SFX.caneHit(o.pan, i * .28) : SFX.caneEmpty(o.pan, i * .28);
+    return `${o.n} ${hit ? '막힘 ✋' : '비었음'}`;
+  });
+  caption('🦯 ' + res.join(' · '));
+}
+document.addEventListener('keydown', e => {
+  if (mode !== 'play') return;
+  const k = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+  if (k){ e.preventDefault(); move(...k); }
+  else if (e.key === ' ' || e.code === 'Space'){ e.preventDefault(); cane(); }
+});
+function mapHTML(){
+  let h = '<div class="mapgrid" aria-hidden="true">';
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++){
+    const oi = obstacleAt(x, y), isGoal = x === R.m.goal[0] && y === R.m.goal[1], isStart = x === START[0] && y === START[1];
+    const c = oi >= 0 ? R.m.items[oi] : isGoal ? '🚦' : isStart ? '🏁' : '';
+    h += `<div class="cell ${R.visited.has(cellKey(x, y)) ? 'vis' : ''} ${oi >= 0 && R.hits.has(oi) ? 'hit' : ''}">${c}</div>`;
+  }
+  return h + '</div><p class="mut" style="text-align:center;font-size:12px">초록 칸 = 내가 지나간 길 · 빨간 칸 = 부딪힌 물건</p>';
+}
+function endRound(success){
+  if (R.done) return;
+  R.done = true; clearTimers(); mode = 'text';
+  if (R.r === 'A'){ S.s1.bumpsA = R.bumps; S.s1.reachedA = success; }
+  else { S.s1.bumpsB = R.bumps; }
+  if (success){ SFX.good(); if (R.r === 'B') speak('녹색 신호입니다. 건너가십시오.'); }
+  else SFX.soft();
+  setTimeout(() => R.r === 'A' ? resultA(success) : resultB(), success ? 900 : 400);
+}
+function resultA(success){
+  render(`${hdr(1)}
+  <div class="screen">
+    <h2>${success ? '도착했어요! 하지만…' : '시간이 다 됐어요'}</h2>
+    <p>${success ? '운 좋게 도착했지만 얼마나 막막했나요?' : '막막했죠? 어디로 가야 할지조차 몰랐을 거예요.'}</p>
+    ${mapHTML()}
+    <div class="card soft"><p>어려웠던 건 <b>앞이 안 보여서</b>가 아니라 <b>정보가 없어서</b>예요.<br>이번엔 하늘이가 실제로 쓰는 도구를 받아 볼게요.</p></div>
+    <div class="card">
+      <p style="font-size:15px"><b>🦯 흰지팡이</b> — 좌우로 두드려서 앞에 있는 물건을 미리 알아채요.</p>
+      <p style="font-size:15px;margin-top:8px"><b>🔊 음향신호기</b> — 신호등 위치와 신호를 소리로 알려줘요.</p>
+    </div>
+    <button class="btn" id="go">도구 받고 다시 도전 🦯</button>
+  </div>`);
+  on('go', () => playRound('B'));
+}
+function resultB(){
+  render(`${hdr(1)}
+  <div class="screen">
+    <h2>신호등 도착! 🚦</h2>
+    <div class="stat"><div><b>${S.s1.bumpsA}</b><span>도구 없이 부딪힘</span></div><div><b>${S.s1.bumpsB}</b><span>도구와 함께 부딪힘</span></div></div>
+    ${mapHTML()}
+    <div class="card soft"><p>똑같이 안 보이는데, <b>도구와 환경</b>이 바뀌니 훨씬 쉬워졌죠?<br>시각장애인에게 필요한 건 동정이 아니라 <b>정보를 주는 환경</b>이에요.</p></div>
+    <div class="fact"><b>💡 알고 있었나요?</b>시각장애인 중에는 앞이 전혀 안 보이는 사람보다 <b>조금은 보이는 저시력인</b>이 훨씬 많아요. 시각장애도 사람마다 정말 다양해요.</div>
+    <button class="btn" id="go">다음 단계로</button>
+  </div>`);
+  on('go', stage2Intro);
+}
+
+/* ───────────── 2. 친구와 하루 ───────────── */
+const SCENES = [
+  { place: '복도', icon: '🏫', line: '다음 시간 음악실이지? 음악실이 어디였더라?',
+    opts: [
+      { t: '"저기! 저쪽 끝에 있잖아."', fb: '"저기", "저쪽"은 보이지 않으면 알 수 없는 말이야. 😅' },
+      { t: '"여기서 왼쪽으로 열 걸음쯤 가면, 오른쪽 두 번째 문이야."', ok: true, fb: '완벽해! 방향과 거리를 말해 주니까 머릿속에 지도가 그려져. 👍' },
+      { t: '(말없이 손을 잡고 데려간다)', fb: '갑자기 누가 잡으면 깜짝 놀라. 먼저 말로 물어봐 줘!' } ] },
+  { place: '계단 앞', icon: '🪜', line: '(계단 앞에서 지팡이로 첫 칸을 찾고 있다)',
+    opts: [
+      { t: '뒤에서 등을 살짝 밀어준다.', fb: '앗, 균형을 잃을 뻔했어! 뒤에서 밀면 오히려 위험해.' },
+      { t: '"도와줄까?" 물어보고, 원하면 내 팔꿈치 위를 잡게 한 뒤 "계단 올라가기 시작해"라고 말한다.', ok: true, fb: '고마워! 네 팔꿈치를 잡으면 네 움직임을 느끼면서 반 걸음 뒤에서 따라갈 수 있어. 🙌' },
+      { t: '혼자 잘하겠지, 하고 그냥 지나간다.', fb: '혼자서도 잘 다닐 수 있어! 그래도 "도와줄까?" 한마디면 내가 고를 수 있잖아. 도움을 받을지는 내가 정할게.' } ] },
+  { place: '점심시간 · 운동장', icon: '🦮', line: '(옆 반 선생님이 안내견 "보리"와 함께 지나간다)',
+    opts: [
+      { t: '너무 귀여워서 "보리야~" 부르며 쓰다듬는다.', fb: '보리는 지금 일하는 중이야. 부르거나 만지면 집중이 흐트러져서 위험할 수 있어.' },
+      { t: '간식을 몰래 준다.', fb: '안내견은 정해진 음식만 먹어. 간식은 절대 안 돼!' },
+      { t: '보리에게는 말을 걸지 않고, 선생님께 인사만 한다.', ok: true, fb: '정답! 안내견은 일하는 중이니 눈으로만 응원해 줘. 안내견은 식당·카페·버스 어디든 함께 들어갈 수 있고, 법으로 거부할 수 없어. 🐕' } ] },
+  { place: '스쿨카페', icon: '☕', line: '메뉴판이 그림뿐이라 뭐가 있는지 모르겠어.',
+    opts: [
+      { t: '"내가 맛있는 거 알아서 골라줄게!"', fb: '마음은 고마운데… 나도 내가 먹고 싶은 걸 고르고 싶어!' },
+      { t: '"메뉴 읽어줄까? 커피는 아메리카노, 카페라떼가 있고 에이드도 있어."', ok: true, fb: '좋아! 선택은 내가 할게. 음료를 받으면 "네 오른손 앞에 둘게"처럼 위치도 말해 주면 최고야. ☕' },
+      { t: '"다음에 다른 친구랑 와."', fb: '나도 혼자 카페에 올 수 있어. 메뉴만 알 수 있으면 돼!' } ] }
+];
+let sceneTried = false;
+function stage2Intro(){
+  mode = 'text';
+  render(`${hdr(2)}
+  <div class="screen">
+    <span class="tag">2단계</span>
+    <h2>하늘이와 함께하는 하루</h2>
+    <p>학교에서 하늘이와 함께 지내요.<br>상황마다 <b>가장 좋은 행동</b>을 골라 보세요.</p>
+    <div class="card"><p style="font-size:15px">틀려도 괜찮아요. 하늘이가 이유를 알려줄 거예요.</p></div>
+    <div class="spacer"></div>
+    <button class="btn" id="go">시작하기</button>
+  </div>`);
+  on('go', () => scene(0));
+}
+function scene(i){
+  sceneTried = false; mode = 'text';
+  const sc = SCENES[i];
+  render(`${hdr(2)}
+  <div class="screen">
+    <div class="row" style="justify-content:space-between"><span class="tag">${sc.place}</span><span class="mut">${i + 1} / ${SCENES.length}</span></div>
+    <div class="scene" aria-hidden="true">${sc.icon}</div>
+    <div class="bubble"><div class="who">🧑‍🦯 하늘</div>${sc.line}</div>
+    <h2 style="font-size:17px">나는 어떻게 할까?</h2>
+    <div class="opts">${sc.opts.map((o, k) => `<button class="opt" data-k="${k}">${o.t}</button>`).join('')}</div>
+    <div id="fb" role="status"></div>
+    <div class="spacer"></div>
+    <button class="btn" id="next" hidden>${i + 1 < SCENES.length ? '다음 상황' : '3단계로'}</button>
+  </div>`);
+  $app.querySelectorAll('.opt').forEach(b => b.onclick = () => pick(i, +b.dataset.k, b));
+  on('next', () => i + 1 < SCENES.length ? scene(i + 1) : stage3Intro());
+}
+function pick(i, k, btn){
+  const o = SCENES[i].opts[k], fb = document.getElementById('fb');
+  if (o.ok){
+    if (!sceneTried) S.s2.firstTry++;
+    SFX.good(); btn.classList.add('right');
+    $app.querySelectorAll('.opt').forEach(b => b.disabled = true);
+    fb.className = 'fb good'; fb.innerHTML = `<b>🧑‍🦯 하늘</b><br>${o.fb}`;
+    const n = document.getElementById('next'); n.hidden = false; n.focus();
+  } else {
+    sceneTried = true; SFX.soft(); btn.classList.add('wrong'); btn.disabled = true;
+    fb.className = 'fb bad'; fb.innerHTML = `<b>🧑‍🦯 하늘</b><br>${o.fb}<br><small>다른 행동을 골라 보세요.</small>`;
+  }
+}
+
+/* ───────────── 3. 장벽 고치기 ───────────── */
+const SPOTS = [
+  { id: 'block', icon: '🛴', fixedIcon: '🟨', name: '복도 점자블록',
+    problem: '점자블록 위에 킥보드가 세워져 있어요. 지팡이로 따라가던 길이 갑자기 막혀요.',
+    fixLabel: '킥보드 치우기', after: '길이 다시 이어졌어요!',
+    fact: '줄무늬 블록은 "이 방향으로 가세요", 점 블록은 "멈춰서 주의하세요"라는 뜻이에요. 노란색인 건 저시력인도 잘 알아보게 하기 위해서예요.' },
+  { id: 'elev', icon: '🛗', fixedIcon: '🔊', name: '엘리베이터',
+    problem: '버튼에 점자가 없고, 몇 층에 도착했는지 소리로 알려주지 않아요.',
+    fixLabel: '점자 + 음성 안내 달기', after: '"3층입니다" 안내가 나와요!', speakAfter: '3층입니다. 문이 열립니다.',
+    fact: '점자는 손끝으로 읽는 글자예요. 한글 점자는 1926년 박두성 선생님이 만든 "훈맹정음"에서 시작됐어요.' },
+  { id: 'app', icon: '📱', fixedIcon: '🗣️', name: '스쿨카페 주문 앱',
+    problem: '버튼이 그림뿐이라, 화면을 읽어주는 스크린리더가 이름을 못 읽어요.',
+    srBefore: '버튼. 버튼. 이미지. 버튼.', srAfter: '아이스 아메리카노, 버튼. 카페라떼, 버튼. 장바구니 담기, 버튼.',
+    fixLabel: '버튼마다 이름 붙이기', after: '이제 스크린리더가 메뉴 이름을 읽어줘요!',
+    fact: '시각장애인도 스마트폰을 써요. 아이폰의 VoiceOver, 안드로이드의 TalkBack이 화면의 글자를 소리로 읽어줘요.' },
+  { id: 'notice', icon: '🖼️', fixedIcon: '📝', name: '학교 홈페이지 공지',
+    problem: '중요한 내용이 그림 속 글자로만 있어서 스크린리더가 "이미지"라고만 읽어요.',
+    srBefore: '이미지. 공지 점 피엔지.', srAfter: '이미지: 학교 축제 안내. 11월 20일 오후 1시, 강당.',
+    fixLabel: '대체텍스트(그림 설명) 쓰기', after: '그림의 내용을 글로 설명해 주니 읽을 수 있어요!',
+    fact: '그림에 붙이는 설명 글을 "대체텍스트"라고 해요. SNS에도 대체텍스트를 넣는 기능이 있어요.' },
+  { id: 'signal', icon: '🚦', name: '학교 앞 횡단보도', ok: true,
+    okText: '음향신호기가 있어서 소리로 신호를 알 수 있어요. 이미 잘 되어 있는 곳이에요! 👍' },
+  { id: 'door', icon: '🚪', name: '급식실 자동문', ok: true,
+    okText: '손잡이를 찾지 않아도 되는 자동문은 휠체어 사용자, 짐을 든 사람 등 누구에게나 편해요. 이런 걸 "유니버설 디자인"이라고 해요! 👍' }
+];
+const NEED = SPOTS.filter(s => !s.ok).length;
+function stage3Intro(){
+  mode = 'text';
+  render(`${hdr(3)}
+  <div class="screen">
+    <span class="tag">3단계</span>
+    <h2>이번엔 내가 바꾸는 사람!</h2>
+    <p>우리 학교에서 하늘이를 막는 <b>장벽 ${NEED}개</b>를 찾아 고쳐 주세요.</p>
+    <div class="card"><p style="font-size:15px">장소를 눌러서 살펴보세요. 이미 잘 되어 있는 곳도 숨어 있어요.</p></div>
+    <div class="spacer"></div>
+    <button class="btn" id="go">찾으러 가기</button>
+  </div>`);
+  on('go', board);
+}
+function board(){
+  mode = 'text';
+  const done = S.s3.fixed.size;
+  render(`${hdr(3)}
+  <div class="screen">
+    <div class="row" style="justify-content:space-between"><h2>우리 학교 둘러보기</h2><span class="counter">🔧 ${done} / ${NEED}</span></div>
+    <div class="board">${SPOTS.map(s => {
+      const f = S.s3.fixed.has(s.id), seen = S.s3.seen && S.s3.seen.has(s.id) && s.ok;
+      return `<button class="spot ${f ? 'fixed' : ''} ${seen ? 'ok' : ''}" data-id="${s.id}" aria-label="${s.name}${f ? ', 고침' : seen ? ', 잘 되어 있음' : ''}">
+        <span class="ic" aria-hidden="true">${f ? s.fixedIcon : s.icon}</span><span class="nm">${s.name}</span><span class="st">${f ? '✅ 고쳤어요' : seen ? '👍 괜찮아요' : ''}</span></button>`;
+    }).join('')}</div>
+    <div class="spacer"></div>
+    <button class="btn" id="go" ${done < NEED ? 'disabled' : ''}>${done < NEED ? `장벽 ${NEED - done}개 남았어요` : '미션 완료하기 🎉'}</button>
+  </div>`);
+  $app.querySelectorAll('.spot').forEach(b => b.onclick = () => openSpot(b.dataset.id));
+  on('go', () => { if (S.s3.fixed.size >= NEED) finale(); });
+}
+function sheet(html){
+  const bg = document.createElement('div'); bg.className = 'sheetbg';
+  bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  document.body.appendChild(bg);
+  bg.onclick = e => { if (e.target === bg) close(); };
+  const close = () => { try { speechSynthesis.cancel(); } catch (e) {} bg.remove(); board(); };
+  const h = bg.querySelector('h2'); if (h){ h.setAttribute('tabindex', '-1'); h.focus(); }
+  return { bg, close };
+}
+function openSpot(id){
+  const s = SPOTS.find(x => x.id === id);
+  if (s.ok){
+    S.s3.seen = S.s3.seen || new Set(); S.s3.seen.add(id); SFX.good();
+    const { close } = sheet(`<div class="hero" aria-hidden="true">${s.icon}</div><h2>${s.name}</h2><div class="fb good">${s.okText}</div><button class="btn" id="sx">계속 찾기</button>`);
+    on('sx', close); return;
+  }
+  if (S.s3.fixed.has(id)){
+    const { close } = sheet(`<div class="hero" aria-hidden="true">${s.fixedIcon}</div><h2>${s.name}</h2><div class="fb good">✅ ${s.after}</div><div class="fact"><b>💡 알고 있었나요?</b>${s.fact}</div><button class="btn" id="sx">닫기</button>`);
+    on('sx', close); return;
+  }
+  SFX.soft();
+  const sr = s.srBefore ? `<div><p class="mut" style="margin-bottom:6px">스크린리더가 읽는 소리</p><div class="sr" id="srt">🔈 "${s.srBefore}"</div><button class="btn ghost" id="listen" style="margin-top:8px">🔊 들어보기</button></div>` : '';
+  const { close } = sheet(`<div class="hero" aria-hidden="true">${s.icon}</div><span class="tag" style="align-self:flex-start;background:var(--badl);color:#7a2e2b">⚠️ 장벽 발견!</span>
+    <h2>${s.name}</h2><p>${s.problem}</p>${sr}
+    <div id="after"></div>
+    <button class="btn" id="fix">🔧 ${s.fixLabel}</button>`);
+  let fixed = false;
+  on('listen', () => speak(fixed ? s.srAfter : s.srBefore, 1.15));
+  on('fix', () => {
+    if (fixed) return close();
+    fixed = true; S.s3.fixed.add(id); SFX.fix();
+    $app.parentNode.querySelector('.sheet .hero').textContent = s.fixedIcon;
+    if (s.srAfter){ document.getElementById('srt').textContent = `🔈 "${s.srAfter}"`; speak(s.srAfter, 1.15); }
+    else if (s.speakAfter) speak(s.speakAfter);
+    document.getElementById('after').innerHTML = `<div class="fb good">✅ ${s.after}</div><div class="fact" style="margin-top:10px"><b>💡 알고 있었나요?</b>${s.fact}</div>`;
+    const b = document.getElementById('fix'); b.textContent = S.s3.fixed.size >= NEED ? '모두 고쳤어요! 🎉' : '계속 찾기';
+    announce(s.after);
+  });
+}
+
+/* ───────────── 마무리 ───────────── */
+function finale(){
+  mode = 'text'; SFX.good();
+  render(`
+  <div class="screen">
+    <div class="hero" aria-hidden="true">🎉</div>
+    <h1 style="text-align:center">미션 완료!</h1>
+    <p style="text-align:center">하늘이의 등굣길이 훨씬 편해졌어요.</p>
+    <div class="stat">
+      <div><b>${S.s1.bumpsA}→${S.s1.bumpsB}</b><span>부딪힘<br>(도구 전→후)</span></div>
+      <div><b>${S.s2.firstTry}/${SCENES.length}</b><span>친구 돕기<br>한 번에 정답</span></div>
+      <div><b>${S.s3.fixed.size}/${NEED}</b><span>고친 장벽</span></div>
+    </div>
+    <div class="card">
+      <p style="font-weight:700;margin-bottom:6px">오늘 기억할 3가지</p>
+      <ul class="take">
+        <li>불편함은 장애가 아니라 <b>정보가 없는 환경</b>에서 와요.</li>
+        <li>돕기 전에 <b>"도와줄까?"</b> 먼저 묻고, 방향은 <b>구체적으로</b> 말해요.</li>
+        <li>점자블록 비우기, 그림 설명 달기 — <b>나도 장벽을 없앨 수 있어요.</b></li>
+      </ul>
+    </div>
+    <div class="spacer"></div>
+    ${EMBEDDED ? '<button class="btn" id="done">☕ 주문하러 가기</button>' : '<button class="btn" id="again">처음부터 다시 하기</button><p class="mut" style="text-align:center;font-size:12px">앱 안에서 열면 이 자리에 "주문하러 가기" 버튼이 나타나요.</p>'}
+  </div>`);
+  on('done', () => { reportComplete(); const b = document.getElementById('done'); b.disabled = true; b.textContent = '주문 화면으로 이동 중…'; });
+  on('again', () => { S.s1 = { bumpsA: 0, bumpsB: 0, reachedA: false }; S.s2 = { firstTry: 0 }; S.s3 = { fixed: new Set() }; intro(); });
+}
+
+intro();
+</script>
+</body>
+</html>
