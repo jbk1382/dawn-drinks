@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { db } from './firebase';
-import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, addDoc, getDocs, query, where, runTransaction } from 'firebase/firestore';
 import React from 'react';
 
 import { BannerFx, BannerFxSettings } from './BannerFx';
@@ -121,10 +121,33 @@ function missionOrigin(url) {
 // Firestore 'missionCoupons/{미션ID}' = { codes:[...], next:0, issued:[{code,userName,at}] }
 // 보너스 쿠폰('coupons' 컬렉션)과는 따로 관리합니다. 번호 목록은 코드에 두지 않고 관리자 화면에서 등록합니다.
 const missionCouponKey = id => `daun_mission_coupon_${id}`;
-// 미션 쿠폰 = 1회용 보너스 쿠폰(type 'limit': 하루·월 한도를 넘어도 주문 가능)
-const MISSION_COUPON_TYPE = 'limit';
+// 미션 쿠폰 = 1회용 보너스 쿠폰. 종류는 관리자 설정(missionCouponType)을 따름
+//  'all'  : 운영시간·휴무일·한도 모두 풀어 줌 (기본값)
+//  'limit': 하루·월 한도만 풀어 줌
+let missionCouponType = 'all';
+function setMissionCouponType(t) { missionCouponType = t === 'limit' ? 'limit' : 'all'; }
 function missionBonusCoupon(missionId, at) {
-  return { active: true, maxUses: 1, usedCount: 0, type: MISSION_COUPON_TYPE, createdAt: at, source: 'mission', missionId };
+  return { active: true, maxUses: 1, usedCount: 0, type: missionCouponType, createdAt: at, source: 'mission', missionId };
+}
+// 이번 접속에서 확인한 쿠폰은 기억해 두고 바로 적용 (서버 왕복 없이)
+const couponCache = new Map();
+// 이 기기에 저장된 미션 쿠폰: { round, code }  (예전 형식: 코드 문자열)
+function readSavedMissionCoupon(missionId) {
+  try {
+    const raw = localStorage.getItem(missionCouponKey(missionId)); if (!raw) return null;
+    if (raw.startsWith('{')) return JSON.parse(raw);
+    return { round: null, code: raw };
+  } catch { return null; }
+}
+function getSavedMissionCoupon(missionId) {
+  const s = missionId && readSavedMissionCoupon(missionId);
+  if (!s) return null;
+  try { if (localStorage.getItem('daun_coupon_used_' + s.code) === '1') return null; } catch { /* 무시 */ }
+  return s.code;
+}
+function markCouponUsed(code) {
+  couponCache.delete(code);
+  try { localStorage.setItem('daun_coupon_used_' + code, '1'); } catch { /* 무시 */ }
 }
 // 보너스 쿠폰 목록에 없는 번호가 '이미 발급된 미션 쿠폰'이면 그 자리에서 보너스 쿠폰으로 등록 (이 기능 전에 발급된 번호용)
 async function adoptIssuedMissionCoupon(code) {
@@ -138,13 +161,16 @@ async function adoptIssuedMissionCoupon(code) {
   return false;
 }
 async function issueMissionCoupon(missionId, userName) {
-  try { const saved = localStorage.getItem(missionCouponKey(missionId)); if (saved) return { code: saved }; } catch { /* 무시 */ }
+  const saved = readSavedMissionCoupon(missionId);
   const ref = doc(db, 'missionCoupons', missionId);
+  let round = null;
   try {
     const code = await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists()) throw new Error('NO_POOL');
       const d = snap.data(), codes = d.codes || [], next = d.next || 0;
+      round = d.round || null;
+      if (saved && (saved.round || null) === round && (d.issued || []).some(r => r.code === saved.code)) return saved.code;
       if (next >= codes.length) throw new Error('EMPTY');
       const now = new Date().toISOString();
       tx.update(ref, { next: next + 1, issued: [...(d.issued || []), { code: codes[next], userName: userName || '', at: now }] });
@@ -152,7 +178,8 @@ async function issueMissionCoupon(missionId, userName) {
       tx.set(doc(db, 'coupons', codes[next]), missionBonusCoupon(missionId, now));
       return codes[next];
     });
-    try { localStorage.setItem(missionCouponKey(missionId), code); } catch { /* 무시 */ }
+    try { localStorage.setItem(missionCouponKey(missionId), JSON.stringify({ round, code })); } catch { /* 무시 */ }
+    couponCache.set(code, { ok: true, code, type: missionCouponType });
     return { code };
   } catch (e) {
     if (e.message === 'NO_POOL') return { error: '쿠폰 목록이 아직 등록되지 않았어요.' };
@@ -166,7 +193,20 @@ async function getMissionCouponPool(missionId) {
   return snap.exists() ? snap.data() : null;
 }
 async function saveMissionCouponPool(missionId, codes) {
-  await setDoc(doc(db, 'missionCoupons', missionId), { codes, next: 0, issued: [], updatedAt: new Date().toISOString() });
+  const now = new Date().toISOString();
+  await setDoc(doc(db, 'missionCoupons', missionId), { codes, next: 0, issued: [], round: now, updatedAt: now });
+}
+// 쿠폰 발급 초기화: 발급 기록을 비우고 처음 번호부터 다시 나눠 줌. 이미 나간 번호는 보너스 쿠폰에서도 지움.
+async function resetMissionCouponPool(missionId) {
+  const ref = doc(db, 'missionCoupons', missionId);
+  const snap = await getDoc(ref); if (!snap.exists()) return 0;
+  const issued = snap.data().issued || [];
+  await Promise.all(issued.map(r => deleteDoc(doc(db, 'coupons', r.code)).catch(() => {})));
+  issued.forEach(r => couponCache.delete(r.code));
+  const now = new Date().toISOString();
+  await setDoc(ref, { next: 0, issued: [], round: now, updatedAt: now }, { merge: true });
+  try { localStorage.removeItem(missionCouponKey(missionId)); } catch { /* 무시 */ }
+  return issued.length;
 }
 
 async function getStoredSettings() {
@@ -312,12 +352,15 @@ async function deleteCoupon(code) {
 async function checkCoupon(codeRaw, expectedType=null) {
   const code = (codeRaw||'').trim().toUpperCase();
   if (!code) return { ok:false, message:'코드를 입력해주세요' };
+  const cached = couponCache.get(code);
+  if (cached && (!expectedType || cached.type === expectedType)) return cached;
   try {
     let snap = await getDoc(doc(db,'coupons',code));
     if (!snap.exists() && await adoptIssuedMissionCoupon(code)) snap = await getDoc(doc(db,'coupons',code));
     if (!snap.exists()) return { ok:false, message:'존재하지 않는 쿠폰입니다' };
     const c = snap.data();
     let type = c.type||'limit';
+    if (c.source === 'mission') type = missionCouponType; // 미션 쿠폰 혜택은 관리자 설정을 따름
     if (type==='time') type='all'; // 이전 명칭 호환
     if (!c.active) return { ok:false, message:'비활성화된 쿠폰입니다' };
     if (c.maxUses>0 && (c.usedCount||0)>=c.maxUses) return { ok:false, message:'사용 횟수가 모두 소진된 쿠폰입니다' };
@@ -534,6 +577,7 @@ export default function App() {
   const thm = getTheme(settings);
   P = thm.P; PLIGHT = thm.light; PGRAD = thm.grad; // 전역 테마 업데이트
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+  setMissionCouponType(settings.missionCouponType);
   const cartCount = cart.length;
   const cartTotal = cart.reduce((s,i) => s+i.totalPrice, 0);
 
@@ -602,7 +646,7 @@ export default function App() {
     }
     const order = { id:Date.now(), name:info.name, location:info.location, extraRequest:info.extraRequest||'', deliveryDate:info.deliveryDate, deliveryTime:info.deliveryTime, deliveryLabel:info.deliveryLabel, items:cart.map(i=>({name:i.drink.name,size:i.selectedSize.label,qty:i.qty,options:Object.values(i.optionChoices),price:i.totalPrice})), totalPrice:cartTotal, orderTime:new Date().toISOString(), status:"주문완료", bonusCouponCode:bonus?.code||null };
     await pushOrder(userName, order);
-    if (bonus) await redeemCoupon(bonus.code);
+    if (bonus) { await redeemCoupon(bonus.code); markCouponUsed(bonus.code); }
     // 이번 달 사용 금액은 별도 누적 없이 주문 기록에서 매번 다시 계산됩니다 (정확성 보장)
     // 하루 잔수는 별도 누적 없이 주문 목록에서 매번 다시 계산됩니다 (정확성 보장)
     const msg = buildAdminMsg(info, cart, cartTotal, settings.school?.name||'');
@@ -627,6 +671,7 @@ export default function App() {
     const onMsg = async (e) => {
       if (e.origin !== window.location.origin && e.origin !== gameOrigin) return;
       if (e.data?.missionId !== settings.missionId) return;
+      if (e.data.type === 'DAUN_MISSION_EXIT') { setMissionOpen(false); return; } // 게임 안 ✕ 버튼
       if (e.data.type === 'DAUN_COUPON_REQUEST') {
         const r = await issueMissionCoupon(settings.missionId, userName);
         try { e.source?.postMessage({ type: 'DAUN_COUPON', missionId: settings.missionId, ...r }, e.origin); } catch { /* 창이 닫힘 */ }
@@ -676,11 +721,10 @@ export default function App() {
   }
 }} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
-        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} orderStartEnabled={settings.orderStartEnabled} orderStartTime={settings.orderStartTime} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} />}
+        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} orderStartEnabled={settings.orderStartEnabled} orderStartTime={settings.orderStartTime} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} missionCoupon={settings.missionEnabled ? getSavedMissionCoupon(settings.missionId) : null} />}
         {missionOpen && (
           <div style={{position:'fixed',inset:0,zIndex:1000,background:'#fff',display:'flex',flexDirection:'column'}}>
-            <button onClick={()=>setMissionOpen(false)} style={{padding:'12px 16px',border:'none',borderBottom:'1px solid #eee',background:'#f7f7f7',color:'#333',fontSize:14,fontWeight:600,textAlign:'left',cursor:'pointer'}}>← 장바구니로 돌아가기</button>
-            <iframe src={missionSrc(settings.missionUrl||INIT_SETTINGS.missionUrl, settings.missionId)} title="장애이해 미션" allow="autoplay" style={{flex:1,border:0,width:'100%'}} />
+            <iframe src={missionSrc(settings.missionUrl||INIT_SETTINGS.missionUrl, settings.missionId)} title="장애이해 미션" allow="autoplay; clipboard-write" style={{flex:1,border:0,width:'100%',height:'100%'}} />
           </div>
         )}
         {toast && <div style={S.toast}>{toast}</div>}
@@ -966,7 +1010,7 @@ function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
 }
 
 // ─── ORDER MODAL ──────────────────────────────────────────────
-function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, orderStartEnabled=false, orderStartTime="08:00", onCancel, onConfirm, cart }) {
+function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, orderStartEnabled=false, orderStartTime="08:00", onCancel, onConfirm, cart, missionCoupon=null }) {
   const [dailyCount, setDailyCount] = useState(0);
   const [slotCounts, setSlotCounts] = useState({});
   useEffect(() => { getDailyData().then(d=>{ setDailyCount(d.count||0); setSlotCounts(d.slotCounts||{}); }); }, []);
@@ -988,7 +1032,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const [isTakeout, setIsTakeout] = useState(false);
   // 쿠폰: ① 보너스(한도 초과 허용) ② 운영시간 초월(시간+한도 모두 허용) — 서로 독립적으로 발급/적용
   // 보너스 쿠폰 — 입력칸 하나, 코드의 종류(type)에 따라 자동으로 풀어주는 범위가 달라짐
-  const [bonusInput,setBonusInput]=useState('');
+  const [bonusInput,setBonusInput]=useState(missionCoupon||''); // 미션 쿠폰이 있으면 미리 입력
   const [bonusState,setBonusState]=useState(null); // null | {ok,message,code,type}
   const [bonusChecking,setBonusChecking]=useState(false);
   const applyBonusCoupon=async()=>{ if(!bonusInput.trim())return; setBonusChecking(true); setBonusState(await checkCoupon(bonusInput)); setBonusChecking(false); };
@@ -1140,6 +1184,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
                   <input value={bonusInput} onChange={e=>{setBonusInput(e.target.value.toUpperCase());setBonusState(null);}} placeholder="쿠폰 코드 입력" style={{flex:1,padding:'9px 12px',border:'1.5px solid #ddd',borderRadius:10,fontSize:13,letterSpacing:1,textTransform:'uppercase'}} onKeyDown={e=>e.key==='Enter'&&applyBonusCoupon()} />
                   <button onClick={applyBonusCoupon} disabled={bonusChecking||!bonusInput.trim()} style={{padding:'9px 16px',border:'none',borderRadius:10,background:bonusInput.trim()?P:'#ccc',color:'#fff',fontSize:13,fontWeight:700,cursor:bonusInput.trim()?'pointer':'default'}}>{bonusChecking?'확인중...':'적용'}</button>
                 </div>
+                {missionCoupon&&bonusInput===missionCoupon&&!bonusState&&<div style={{fontSize:11,color:P,marginTop:6}}>🎟️ 미션 쿠폰이 입력돼 있어요. [적용]을 누르세요.</div>}
                 {bonusState&&!bonusState.ok&&<div style={{fontSize:11,color:'#e53935',marginTop:6}}>⚠️ {bonusState.message}</div>}
               </div>
             )}
@@ -1902,6 +1947,10 @@ function SettingsTab({ settings, onSave }) {
             <a href={missionSrc(form.missionUrl||INIT_SETTINGS.missionUrl,'preview')} target="_blank" rel="noreferrer" style={{display:'block',textAlign:'center',fontSize:13,color:P,fontWeight:700,marginBottom:6}}>🎮 미션 게임 미리 해보기</a>
             <MissionDeviceStatus missionId={form.missionId} />
             <MissionCouponAdmin missionId={form.missionId} />
+            <div style={{fontSize:12,color:'#555',margin:'12px 0 6px'}}>미션 쿠폰 혜택 (이미 나간 쿠폰에도 바로 적용돼요)</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+              {[['all','🕒 운영시간·휴무일·한도 모두 풀기'],['limit','한도만 풀기']].map(([v,l])=>{ const on=(form.missionCouponType||'all')===v; return <button key={v} onClick={()=>setForm(p=>({...p,missionCouponType:v}))} style={{border:`1px solid ${on?P:'#ddd'}`,background:'#fff',borderRadius:16,padding:'6px 12px',fontSize:12,color:on?P:'#555',fontWeight:on?700:400,cursor:'pointer'}}>{l}</button>; })}
+            </div>
             <div style={{fontSize:11,color:P,marginTop:4,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
           </div>
         )}
@@ -2074,6 +2123,11 @@ function MissionCouponAdmin({ missionId }) {
   // 영문자가 하나라도 있고 5자 이상이면 쿠폰번호로 봄. 숫자가 없는 번호(DAUN-NRBHX 등)도 포함.
   const codes = [...new Set((text.toUpperCase().match(/[A-Z0-9]+(?:-[A-Z0-9]+)*/g) || []).filter(c => /[A-Z]/.test(c) && c.length >= 5))];
   const total = pool?.codes?.length || 0, used = pool?.next || 0;
+  const reset = async () => {
+    if (!window.confirm(`쿠폰 발급을 초기화할까요?\n\n· 발급 기록 ${used}개가 지워지고 첫 번호부터 다시 나눠 줘요.\n· 이미 학생들이 받은 번호는 주문창에서 더 이상 쓸 수 없어요.\n· 등록한 쿠폰 목록(${total}개)은 그대로 남아요.`)) return;
+    try { const n = await resetMissionCouponPool(missionId); setPool(await getMissionCouponPool(missionId)); setMsg(`✅ 초기화했어요. (지운 발급 기록 ${n}개)`); }
+    catch { setMsg('⚠️ 초기화 실패 (네트워크 또는 Firestore 권한 확인)'); }
+  };
   const register = async () => {
     if (!missionId) { setMsg('먼저 미션 ID를 입력하세요.'); return; }
     if (!codes.length) { setMsg('쿠폰번호를 찾지 못했어요.'); return; }
@@ -2098,6 +2152,7 @@ function MissionCouponAdmin({ missionId }) {
       </>}
       <textarea value={text} onChange={e=>setText(e.target.value)} rows={4} placeholder="쿠폰번호를 붙여 넣으세요 (한 줄에 하나, 엑셀 표를 그대로 복사해도 돼요)" style={{width:'100%',boxSizing:'border-box',padding:10,border:'1.5px solid #ddd',borderRadius:10,fontSize:14,fontFamily:'monospace',marginBottom:6}} />
       <button onClick={register} disabled={!codes.length} style={{width:'100%',height:40,borderRadius:20,border:'none',background:codes.length?P:'#ccc',color:'#fff',fontSize:14,fontWeight:700,cursor:codes.length?'pointer':'default'}}>쿠폰 목록 등록 ({codes.length}개 인식됨)</button>
+      {pool && <button onClick={reset} style={{width:'100%',height:36,borderRadius:18,border:'1px solid #e57373',background:'#fff',color:'#c62828',fontSize:13,fontWeight:700,cursor:'pointer',marginTop:8}}>🔄 쿠폰 발급 초기화</button>}
       {msg && <div style={{fontSize:12,color:'#555',marginTop:6}}>{msg}</div>}
     </div>
   );
