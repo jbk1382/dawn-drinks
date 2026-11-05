@@ -2028,7 +2028,8 @@ function MissionCouponAdmin({ missionId }) {
     return () => { alive = false; };
   }, [missionId]);
   // 붙여 넣은 글에서 쿠폰번호만 골라냄 (엑셀 표를 통째로 붙여도 번호·제목 칸은 빠짐)
-  const codes = [...new Set((text.toUpperCase().match(/[A-Z0-9]+(?:-[A-Z0-9]+)*/g) || []).filter(c => /[A-Z]/.test(c) && /[0-9]/.test(c) && c.length >= 5))];
+  // 영문자가 하나라도 있고 5자 이상이면 쿠폰번호로 봄. 숫자가 없는 번호(DAUN-NRBHX 등)도 포함.
+  const codes = [...new Set((text.toUpperCase().match(/[A-Z0-9]+(?:-[A-Z0-9]+)*/g) || []).filter(c => /[A-Z]/.test(c) && c.length >= 5))];
   const total = pool?.codes?.length || 0, used = pool?.next || 0;
   const register = async () => {
     if (!missionId) { setMsg('먼저 미션 ID를 입력하세요.'); return; }
