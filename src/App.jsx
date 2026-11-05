@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { db } from './firebase';
-import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, addDoc, getDocs, query, where, runTransaction } from 'firebase/firestore';
 import React from 'react';
 
 import { BannerFx, BannerFxSettings } from './BannerFx';
@@ -106,6 +106,48 @@ function setQuizPassedStore() { try { sessionStorage.setItem('hb_quiz_passed','1
 const missionKey = id => `daun_mission_${id}`;
 function getMissionDone(id) { try { return localStorage.getItem(missionKey(id)) === '1'; } catch { return false; } }
 function setMissionDone(id) { try { localStorage.setItem(missionKey(id),'1'); } catch { /* 저장 불가(사생활 모드 등) 시 무시 */ } }
+// 미션 게임 주소: 같은 사이트 안(/missions/...)이든 다른 사이트(https://...vercel.app)든 됩니다.
+// 게임이 완료 신호를 이 앱으로 보낼 수 있도록 from=앱주소 를 붙여 엽니다.
+function missionSrc(url, missionId) {
+  const base = url || '/missions/vision/index.html';
+  return `${base}${base.includes('?') ? '&' : '?'}mission=${encodeURIComponent(missionId)}&from=${encodeURIComponent(window.location.origin)}`;
+}
+function missionOrigin(url) {
+  try { return new URL(url || '/', window.location.href).origin; } catch { return window.location.origin; }
+}
+
+// ─── 장애이해 미션 쿠폰 (학생마다 겹치지 않게 순서대로) ─────────────
+// Firestore 'missionCoupons/{미션ID}' = { codes:[...], next:0, issued:[{code,userName,at}] }
+// 보너스 쿠폰('coupons' 컬렉션)과는 따로 관리합니다. 번호 목록은 코드에 두지 않고 관리자 화면에서 등록합니다.
+const missionCouponKey = id => `daun_mission_coupon_${id}`;
+async function issueMissionCoupon(missionId, userName) {
+  try { const saved = localStorage.getItem(missionCouponKey(missionId)); if (saved) return { code: saved }; } catch { /* 무시 */ }
+  const ref = doc(db, 'missionCoupons', missionId);
+  try {
+    const code = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error('NO_POOL');
+      const d = snap.data(), codes = d.codes || [], next = d.next || 0;
+      if (next >= codes.length) throw new Error('EMPTY');
+      tx.update(ref, { next: next + 1, issued: [...(d.issued || []), { code: codes[next], userName: userName || '', at: new Date().toISOString() }] });
+      return codes[next];
+    });
+    try { localStorage.setItem(missionCouponKey(missionId), code); } catch { /* 무시 */ }
+    return { code };
+  } catch (e) {
+    if (e.message === 'NO_POOL') return { error: '쿠폰 목록이 아직 등록되지 않았어요.' };
+    if (e.message === 'EMPTY') return { error: '준비된 쿠폰이 모두 발급됐어요.' };
+    console.error('미션 쿠폰 발급 실패', e);
+    return { error: '쿠폰 발급 중 오류가 났어요.' };
+  }
+}
+async function getMissionCouponPool(missionId) {
+  const snap = await getDoc(doc(db, 'missionCoupons', missionId));
+  return snap.exists() ? snap.data() : null;
+}
+async function saveMissionCouponPool(missionId, codes) {
+  await setDoc(doc(db, 'missionCoupons', missionId), { codes, next: 0, issued: [], updatedAt: new Date().toISOString() });
+}
 
 async function getStoredSettings() {
   try { const s=await getDoc(doc(db,'config','settings')); return s.exists()?s.data():null; } catch { return null; }
@@ -554,11 +596,18 @@ export default function App() {
     else setOrderModal(true);
   };
 
-  // 미션 게임(iframe)이 보내는 완료 메시지 받기
+  // 미션 게임(iframe)이 보내는 메시지 받기: 쿠폰 요청, 완료
   useEffect(() => {
+    const gameOrigin = missionOrigin(settings.missionUrl || INIT_SETTINGS.missionUrl);
     const onMsg = async (e) => {
-      if (e.origin !== window.location.origin) return;
-      if (e.data?.type !== 'DAUN_MISSION_COMPLETE' || e.data.missionId !== settings.missionId) return;
+      if (e.origin !== window.location.origin && e.origin !== gameOrigin) return;
+      if (e.data?.missionId !== settings.missionId) return;
+      if (e.data.type === 'DAUN_COUPON_REQUEST') {
+        const r = await issueMissionCoupon(settings.missionId, userName);
+        try { e.source?.postMessage({ type: 'DAUN_COUPON', missionId: settings.missionId, ...r }, e.origin); } catch { /* 창이 닫힘 */ }
+        return;
+      }
+      if (e.data.type !== 'DAUN_MISSION_COMPLETE') return;
       setMissionDone(settings.missionId);
       setMissionOpen(false);
       setOrderModal(true);
@@ -567,7 +616,7 @@ export default function App() {
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
-  }, [settings.missionId, userName]);
+  }, [settings.missionId, settings.missionUrl, userName]);
 
   if (booting) return <div style={S.shell}><div style={{...S.phone,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48}}>🥤</div><div style={{color:'#888',marginTop:10}}>로딩 중...</div></div></div></div>;
   if (settings.quizEnabled && !quizPassed) return <div style={S.shell}><div style={S.phone}><QuizConsentScreen title={settings.quizTitle} questions={settings.quizQuestions} consentText={settings.consentText} onPass={()=>{ setQuizPassedStore(); setQuizPassed(true); }} /></div></div>;
@@ -606,7 +655,7 @@ export default function App() {
         {missionOpen && (
           <div style={{position:'fixed',inset:0,zIndex:1000,background:'#fff',display:'flex',flexDirection:'column'}}>
             <button onClick={()=>setMissionOpen(false)} style={{padding:'12px 16px',border:'none',borderBottom:'1px solid #eee',background:'#f7f7f7',color:'#333',fontSize:14,fontWeight:600,textAlign:'left',cursor:'pointer'}}>← 장바구니로 돌아가기</button>
-            <iframe src={`${settings.missionUrl||INIT_SETTINGS.missionUrl}?mission=${encodeURIComponent(settings.missionId)}`} title="장애이해 미션" allow="autoplay" style={{flex:1,border:0,width:'100%'}} />
+            <iframe src={missionSrc(settings.missionUrl||INIT_SETTINGS.missionUrl, settings.missionId)} title="장애이해 미션" allow="autoplay" style={{flex:1,border:0,width:'100%'}} />
           </div>
         )}
         {toast && <div style={S.toast}>{toast}</div>}
@@ -1819,7 +1868,11 @@ function SettingsTab({ settings, onSave }) {
           <div>
             <div style={{fontSize:12,color:'#555',marginBottom:4}}>미션 ID (바꾸면 모든 학생이 미션을 다시 해야 합니다)</div>
             <input value={form.missionId||''} onChange={e=>setForm(p=>({...p,missionId:e.target.value.trim()}))} placeholder="예: vision-2026-11" style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,marginBottom:10}} />
-            <a href={`${form.missionUrl||INIT_SETTINGS.missionUrl}?mission=preview`} target="_blank" rel="noreferrer" style={{display:'block',textAlign:'center',fontSize:13,color:P,fontWeight:700,marginBottom:6}}>🎮 미션 게임 미리 해보기</a>
+            <div style={{fontSize:12,color:'#555',marginBottom:4}}>미션 게임 주소 (다른 사이트에 올린 게임은 https:// 주소 전체를 넣으세요)</div>
+            <input value={form.missionUrl||''} onChange={e=>setForm(p=>({...p,missionUrl:e.target.value.trim()}))} placeholder="예: https://gg-vi.vercel.app" style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,marginBottom:6}} />
+            <button onClick={()=>setForm(p=>({...p,missionUrl:INIT_SETTINGS.missionUrl}))} style={{border:'1px solid #ddd',background:'#fff',borderRadius:16,padding:'6px 12px',fontSize:12,color:'#555',cursor:'pointer',marginBottom:10}}>기존 게임 주소로 되돌리기</button>
+            <a href={missionSrc(form.missionUrl||INIT_SETTINGS.missionUrl,'preview')} target="_blank" rel="noreferrer" style={{display:'block',textAlign:'center',fontSize:13,color:P,fontWeight:700,marginBottom:6}}>🎮 미션 게임 미리 해보기</a>
+            <MissionCouponAdmin missionId={form.missionId} />
             <div style={{fontSize:11,color:P,marginTop:4,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
           </div>
         )}
@@ -1961,6 +2014,50 @@ function PwChangeSection({ currentPw, onSave }) {
   );
 }
 
+// 장애이해 미션 완료 쿠폰 관리: 목록 등록, 발급 현황
+function MissionCouponAdmin({ missionId }) {
+  const [pool, setPool] = useState(undefined); // undefined = 불러오는 중, null = 없음
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState('');
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (missionId) getMissionCouponPool(missionId)
+      .then(p => { if (alive) setPool(p); })
+      .catch(() => { if (alive) { setPool(null); setMsg('⚠️ 불러오기 실패 (네트워크 또는 Firestore 권한 확인)'); } });
+    return () => { alive = false; };
+  }, [missionId]);
+  // 붙여 넣은 글에서 쿠폰번호만 골라냄 (엑셀 표를 통째로 붙여도 번호·제목 칸은 빠짐)
+  const codes = [...new Set((text.toUpperCase().match(/[A-Z0-9]+(?:-[A-Z0-9]+)*/g) || []).filter(c => /[A-Z]/.test(c) && /[0-9]/.test(c) && c.length >= 5))];
+  const total = pool?.codes?.length || 0, used = pool?.next || 0;
+  const register = async () => {
+    if (!missionId) { setMsg('먼저 미션 ID를 입력하세요.'); return; }
+    if (!codes.length) { setMsg('쿠폰번호를 찾지 못했어요.'); return; }
+    if (used > 0 && !window.confirm(`이미 ${used}개가 발급됐어요. 새 목록으로 바꾸면 발급 순서와 기록이 처음부터 다시 시작됩니다. 계속할까요?`)) return;
+    try {
+      await saveMissionCouponPool(missionId, codes);
+      setPool(await getMissionCouponPool(missionId)); setText(''); setMsg(`✅ ${codes.length}개 등록했어요.`);
+    } catch { setMsg('⚠️ 저장 실패 (네트워크 또는 Firestore 권한 확인)'); }
+  };
+  return (
+    <div style={{background:'#fff',borderRadius:12,padding:12,marginTop:12,border:'1px solid #eee'}}>
+      <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🎟️ 미션 완료 쿠폰 (Cafe Daun)</div>
+      <div style={{fontSize:11,color:'#888',marginBottom:8,lineHeight:1.5}}>미션을 마친 학생에게 이 목록에서 순서대로 하나씩, 겹치지 않게 나눠 줍니다. 같은 기기에서 다시 하면 같은 번호가 나와요. 미션 ID마다 따로 관리됩니다.</div>
+      <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>
+        {!missionId ? '미션 ID를 먼저 입력하세요' : pool===undefined ? '불러오는 중…' : pool ? `발급 ${used} / ${total}개 · 남은 쿠폰 ${total-used}개` : '등록된 쿠폰 목록이 없어요'}
+      </div>
+      {pool?.issued?.length>0 && <>
+        <button onClick={()=>setOpen(o=>!o)} style={{border:'1px solid #ddd',background:'#fff',borderRadius:16,padding:'6px 12px',fontSize:12,color:'#555',cursor:'pointer',marginBottom:8}}>{open?'발급 내역 접기':'발급 내역 보기'}</button>
+        {open && <div style={{maxHeight:180,overflow:'auto',fontSize:12,background:'#fafafa',borderRadius:8,padding:8,marginBottom:8,lineHeight:1.7}}>
+          {[...pool.issued].reverse().map((r,i)=><div key={i}><b style={{fontFamily:'monospace'}}>{r.code}</b> · {r.userName||'(이름 없음)'} · {r.at?new Date(r.at).toLocaleString('ko-KR'):''}</div>)}
+        </div>}
+      </>}
+      <textarea value={text} onChange={e=>setText(e.target.value)} rows={4} placeholder="쿠폰번호를 붙여 넣으세요 (한 줄에 하나, 엑셀 표를 그대로 복사해도 돼요)" style={{width:'100%',boxSizing:'border-box',padding:10,border:'1.5px solid #ddd',borderRadius:10,fontSize:14,fontFamily:'monospace',marginBottom:6}} />
+      <button onClick={register} disabled={!codes.length} style={{width:'100%',height:40,borderRadius:20,border:'none',background:codes.length?P:'#ccc',color:'#fff',fontSize:14,fontWeight:700,cursor:codes.length?'pointer':'default'}}>쿠폰 목록 등록 ({codes.length}개 인식됨)</button>
+      {msg && <div style={{fontSize:12,color:'#555',marginTop:6}}>{msg}</div>}
+    </div>
+  );
+}
 function SH({ children }) { return <div style={{fontSize:14,fontWeight:700,color:'#333',marginBottom:10,paddingBottom:6,borderBottom:`2px solid ${P}20`}}>{children}</div>; }
 function Tog({ on, color, onChange }) { return <div onClick={onChange} style={{width:50,height:28,borderRadius:14,background:on?color:'#ddd',position:'relative',cursor:'pointer',transition:'background 0.25s',flexShrink:0}}><div style={{width:24,height:24,borderRadius:12,background:'#fff',position:'absolute',top:2,left:on?24:2,transition:'left 0.25s',boxShadow:'0 1px 4px rgba(0,0,0,0.2)'}} /></div>; }
 function TestBadge({ result }) { return <div style={{marginTop:10,padding:'10px 14px',borderRadius:10,background:result.ok?'#e8f5e9':'#ffebee'}}><span style={{fontWeight:700,color:result.ok?'#2e7d32':'#c62828',fontSize:14}}>{result.ok?'✅ 성공!':'❌ 실패'}</span>{!result.ok&&result.error&&<div style={{fontSize:12,color:'#888',marginTop:4}}>{result.error}</div>}</div>; }
