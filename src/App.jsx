@@ -592,8 +592,10 @@ export default function App() {
 
   // 주문하기: 미션 이벤트가 켜져 있고 아직 안 했으면 미션 먼저
   const handleCheckout = () => {
-    if (settings.missionEnabled && settings.missionId && !getMissionDone(settings.missionId)) setMissionOpen(true);
-    else setOrderModal(true);
+    if (settings.missionEnabled && settings.missionId && !getMissionDone(settings.missionId)) { setMissionOpen(true); return; }
+    // 미션을 건너뛰는 이유를 알려 줌 (이 기기에서 이미 완료한 경우)
+    if (settings.missionEnabled && settings.missionId) notify('✅ 이 기기는 장애이해 미션을 이미 마쳤어요');
+    setOrderModal(true);
   };
 
   // 미션 게임(iframe)이 보내는 메시지 받기: 쿠폰 요청, 완료
@@ -1872,6 +1874,7 @@ function SettingsTab({ settings, onSave }) {
             <input value={form.missionUrl||''} onChange={e=>setForm(p=>({...p,missionUrl:e.target.value.trim()}))} placeholder="예: https://gg-vi.vercel.app" style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,marginBottom:6}} />
             <button onClick={()=>setForm(p=>({...p,missionUrl:INIT_SETTINGS.missionUrl}))} style={{border:'1px solid #ddd',background:'#fff',borderRadius:16,padding:'6px 12px',fontSize:12,color:'#555',cursor:'pointer',marginBottom:10}}>기존 게임 주소로 되돌리기</button>
             <a href={missionSrc(form.missionUrl||INIT_SETTINGS.missionUrl,'preview')} target="_blank" rel="noreferrer" style={{display:'block',textAlign:'center',fontSize:13,color:P,fontWeight:700,marginBottom:6}}>🎮 미션 게임 미리 해보기</a>
+            <MissionDeviceStatus missionId={form.missionId} />
             <MissionCouponAdmin missionId={form.missionId} />
             <div style={{fontSize:11,color:P,marginTop:4,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
           </div>
@@ -2014,6 +2017,20 @@ function PwChangeSection({ currentPw, onSave }) {
   );
 }
 
+// 이 기기의 미션 완료 여부 (완료한 기기는 주문하기를 눌러도 미션 없이 바로 주문창이 열림)
+function MissionDeviceStatus({ missionId }) {
+  const [, rerender] = useState(0);
+  if (!missionId) return null;
+  const done = getMissionDone(missionId);
+  const clear = () => { try { localStorage.removeItem(missionKey(missionId)); } catch { /* 무시 */ } rerender(n => n + 1); };
+  return (
+    <div style={{background:'#fff',border:'1px solid #eee',borderRadius:10,padding:'8px 10px',marginBottom:6,fontSize:12,lineHeight:1.5}}>
+      <div><b>이 기기:</b> {done ? '✅ 이 미션 ID로 이미 완료 → 주문하기를 누르면 미션 없이 바로 주문창이 열려요' : '⏳ 아직 안 함 → 주문하기를 누르면 미션이 먼저 열려요'}</div>
+      {done && <button onClick={clear} style={{marginTop:6,border:'1px solid #ddd',background:'#fff',borderRadius:16,padding:'6px 12px',fontSize:12,color:'#555',cursor:'pointer'}}>이 기기 완료 기록 지우기 (다시 해보기)</button>}
+      <div style={{color:'#888',marginTop:4}}>학생 기기 전체를 다시 하게 하려면 미션 ID를 바꾸세요. 쿠폰은 같은 기기면 같은 번호가 다시 나와요.</div>
+    </div>
+  );
+}
 // 장애이해 미션 완료 쿠폰 관리: 목록 등록, 발급 현황
 function MissionCouponAdmin({ missionId }) {
   const [pool, setPool] = useState(undefined); // undefined = 불러오는 중, null = 없음
