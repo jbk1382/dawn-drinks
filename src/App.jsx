@@ -106,6 +106,7 @@ function setQuizPassedStore() { try { sessionStorage.setItem('hb_quiz_passed','1
 const missionKey = id => `daun_mission_${id}`;
 function getMissionDone(id) { try { return localStorage.getItem(missionKey(id)) === '1'; } catch { return false; } }
 function setMissionDone(id) { try { localStorage.setItem(missionKey(id),'1'); } catch { /* 저장 불가(사생활 모드 등) 시 무시 */ } }
+const LEGACY_MISSION_URL = "/missions/vision/index.html"; // 예전 게임 (이 저장소 안)
 // 미션 게임 주소: 같은 사이트 안(/missions/...)이든 다른 사이트(https://...vercel.app)든 됩니다.
 // 게임이 완료 신호를 이 앱으로 보낼 수 있도록 from=앱주소 를 붙여 엽니다.
 function missionSrc(url, missionId) {
@@ -451,7 +452,7 @@ const INIT_SETTINGS = {
   consentText: "주문 시 입력한 이름과 주문 내역이 스쿨카페 운영(주문 확인·수령 안내) 목적으로만 사용되는 것에 동의합니다.",
   missionEnabled: false,
   missionId: "vision-2026-11",
-  missionUrl: "/missions/vision/index.html",
+  missionUrl: "https://gg-vi.vercel.app", // 8비트 도트판 게임 (jbk1382/gg-vi)
 };
 
 // ─── APP ──────────────────────────────────────────────────────
@@ -490,6 +491,8 @@ export default function App() {
           deliveryHours: { ...INIT_DH, ...(stored.deliveryHours||{}) },
           adminPassword: stored.adminPassword || INIT_SETTINGS.adminPassword,
           themeId: stored.themeId || INIT_SETTINGS.themeId,
+          // 예전 게임 주소가 자동으로 저장돼 있던 경우 → 도트판으로. 관리자가 직접 고른 주소는 그대로.
+          missionUrl: (!stored.missionUrl || (stored.missionUrl === LEGACY_MISSION_URL && !stored.missionUrlManual)) ? INIT_SETTINGS.missionUrl : stored.missionUrl,
           dailyLimit: stored.dailyLimit ?? INIT_SETTINGS.dailyLimit,
           slotLimit: stored.slotLimit ?? INIT_SETTINGS.slotLimit,
           orderStartEnabled: stored.orderStartEnabled ?? INIT_SETTINGS.orderStartEnabled,
@@ -1871,8 +1874,11 @@ function SettingsTab({ settings, onSave }) {
             <div style={{fontSize:12,color:'#555',marginBottom:4}}>미션 ID (바꾸면 모든 학생이 미션을 다시 해야 합니다)</div>
             <input value={form.missionId||''} onChange={e=>setForm(p=>({...p,missionId:e.target.value.trim()}))} placeholder="예: vision-2026-11" style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,marginBottom:10}} />
             <div style={{fontSize:12,color:'#555',marginBottom:4}}>미션 게임 주소 (다른 사이트에 올린 게임은 https:// 주소 전체를 넣으세요)</div>
-            <input value={form.missionUrl||''} onChange={e=>setForm(p=>({...p,missionUrl:e.target.value.trim()}))} placeholder="예: https://gg-vi.vercel.app" style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,marginBottom:6}} />
-            <button onClick={()=>setForm(p=>({...p,missionUrl:INIT_SETTINGS.missionUrl}))} style={{border:'1px solid #ddd',background:'#fff',borderRadius:16,padding:'6px 12px',fontSize:12,color:'#555',cursor:'pointer',marginBottom:10}}>기존 게임 주소로 되돌리기</button>
+            <input value={form.missionUrl||''} onChange={e=>setForm(p=>({...p,missionUrl:e.target.value.trim(),missionUrlManual:true}))} placeholder="예: https://gg-vi.vercel.app" style={{width:'100%',boxSizing:'border-box',padding:'10px',border:'1.5px solid #ddd',borderRadius:10,fontSize:16,marginBottom:6}} />
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+              <button onClick={()=>setForm(p=>({...p,missionUrl:INIT_SETTINGS.missionUrl,missionUrlManual:false}))} style={{border:`1px solid ${form.missionUrl===INIT_SETTINGS.missionUrl?P:'#ddd'}`,background:'#fff',borderRadius:16,padding:'6px 12px',fontSize:12,color:form.missionUrl===INIT_SETTINGS.missionUrl?P:'#555',fontWeight:700,cursor:'pointer'}}>🎮 도트판 게임 (기본)</button>
+              <button onClick={()=>setForm(p=>({...p,missionUrl:LEGACY_MISSION_URL,missionUrlManual:true}))} style={{border:`1px solid ${form.missionUrl===LEGACY_MISSION_URL?P:'#ddd'}`,background:'#fff',borderRadius:16,padding:'6px 12px',fontSize:12,color:form.missionUrl===LEGACY_MISSION_URL?P:'#555',cursor:'pointer'}}>예전 게임 (쿠폰 없음)</button>
+            </div>
             <a href={missionSrc(form.missionUrl||INIT_SETTINGS.missionUrl,'preview')} target="_blank" rel="noreferrer" style={{display:'block',textAlign:'center',fontSize:13,color:P,fontWeight:700,marginBottom:6}}>🎮 미션 게임 미리 해보기</a>
             <MissionDeviceStatus missionId={form.missionId} />
             <MissionCouponAdmin missionId={form.missionId} />
