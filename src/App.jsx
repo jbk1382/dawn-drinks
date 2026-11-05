@@ -121,6 +121,22 @@ function missionOrigin(url) {
 // Firestore 'missionCoupons/{미션ID}' = { codes:[...], next:0, issued:[{code,userName,at}] }
 // 보너스 쿠폰('coupons' 컬렉션)과는 따로 관리합니다. 번호 목록은 코드에 두지 않고 관리자 화면에서 등록합니다.
 const missionCouponKey = id => `daun_mission_coupon_${id}`;
+// 미션 쿠폰 = 1회용 보너스 쿠폰(type 'limit': 하루·월 한도를 넘어도 주문 가능)
+const MISSION_COUPON_TYPE = 'limit';
+function missionBonusCoupon(missionId, at) {
+  return { active: true, maxUses: 1, usedCount: 0, type: MISSION_COUPON_TYPE, createdAt: at, source: 'mission', missionId };
+}
+// 보너스 쿠폰 목록에 없는 번호가 '이미 발급된 미션 쿠폰'이면 그 자리에서 보너스 쿠폰으로 등록 (이 기능 전에 발급된 번호용)
+async function adoptIssuedMissionCoupon(code) {
+  try {
+    const snap = await getDocs(collection(db, 'missionCoupons'));
+    for (const d of snap.docs) {
+      const hit = (d.data().issued || []).find(r => r.code === code);
+      if (hit) { await setDoc(doc(db, 'coupons', code), missionBonusCoupon(d.id, hit.at || new Date().toISOString())); return true; }
+    }
+  } catch (e) { console.error('미션 쿠폰 확인 실패', e); }
+  return false;
+}
 async function issueMissionCoupon(missionId, userName) {
   try { const saved = localStorage.getItem(missionCouponKey(missionId)); if (saved) return { code: saved }; } catch { /* 무시 */ }
   const ref = doc(db, 'missionCoupons', missionId);
@@ -130,7 +146,10 @@ async function issueMissionCoupon(missionId, userName) {
       if (!snap.exists()) throw new Error('NO_POOL');
       const d = snap.data(), codes = d.codes || [], next = d.next || 0;
       if (next >= codes.length) throw new Error('EMPTY');
-      tx.update(ref, { next: next + 1, issued: [...(d.issued || []), { code: codes[next], userName: userName || '', at: new Date().toISOString() }] });
+      const now = new Date().toISOString();
+      tx.update(ref, { next: next + 1, issued: [...(d.issued || []), { code: codes[next], userName: userName || '', at: now }] });
+      // 주문창의 '보너스 쿠폰' 칸에서 바로 쓸 수 있게 1회용 보너스 쿠폰으로도 등록
+      tx.set(doc(db, 'coupons', codes[next]), missionBonusCoupon(missionId, now));
       return codes[next];
     });
     try { localStorage.setItem(missionCouponKey(missionId), code); } catch { /* 무시 */ }
@@ -294,7 +313,8 @@ async function checkCoupon(codeRaw, expectedType=null) {
   const code = (codeRaw||'').trim().toUpperCase();
   if (!code) return { ok:false, message:'코드를 입력해주세요' };
   try {
-    const snap = await getDoc(doc(db,'coupons',code));
+    let snap = await getDoc(doc(db,'coupons',code));
+    if (!snap.exists() && await adoptIssuedMissionCoupon(code)) snap = await getDoc(doc(db,'coupons',code));
     if (!snap.exists()) return { ok:false, message:'존재하지 않는 쿠폰입니다' };
     const c = snap.data();
     let type = c.type||'limit';
@@ -2066,7 +2086,7 @@ function MissionCouponAdmin({ missionId }) {
   return (
     <div style={{background:'#fff',borderRadius:12,padding:12,marginTop:12,border:'1px solid #eee'}}>
       <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🎟️ 미션 완료 쿠폰 (Cafe Daun)</div>
-      <div style={{fontSize:11,color:'#888',marginBottom:8,lineHeight:1.5}}>미션을 마친 학생에게 이 목록에서 순서대로 하나씩, 겹치지 않게 나눠 줍니다. 같은 기기에서 다시 하면 같은 번호가 나와요. 미션 ID마다 따로 관리됩니다.</div>
+      <div style={{fontSize:11,color:'#888',marginBottom:8,lineHeight:1.5}}>미션을 마친 학생에게 이 목록에서 순서대로 하나씩, 겹치지 않게 나눠 줍니다. 받은 번호는 주문창 '보너스 쿠폰' 칸에서 1번 쓸 수 있어요(하루·월 한도를 넘어도 주문 가능). 같은 기기에서 다시 하면 같은 번호가 나와요. 미션 ID마다 따로 관리됩니다.</div>
       <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>
         {!missionId ? '미션 ID를 먼저 입력하세요' : pool===undefined ? '불러오는 중…' : pool ? `발급 ${used} / ${total}개 · 남은 쿠폰 ${total-used}개` : '등록된 쿠폰 목록이 없어요'}
       </div>
