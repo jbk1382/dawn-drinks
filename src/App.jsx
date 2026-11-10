@@ -622,7 +622,7 @@ export default function App() {
     if (ev) {
       if (!bonus) { alert(`🎟️ 지금은 쿠폰 전용 주문 이벤트 중입니다\n\n쿠폰을 적용해야 주문할 수 있어요.`); return; }
       // 이벤트 중 쿠폰 주문은 1인 1잔
-      if (cart.reduce((n,i)=>n+(i.qty||0),0) > 1) { alert(`⚠️ 쿠폰 주문은 1잔만 가능해요\n\n장바구니에 음료를 1잔만 남기고 다시 주문해 주세요.`); return; }
+      if (cart.reduce((n,i)=>n+(i.qty||0),0) > 1) { alert(`⚠️ 쿠폰 주문은 1잔만 가능해요\n\nCart에 음료를 1잔만 남기고 다시 주문해 주세요.`); return; }
       if (!couponOnlyStatus(settings).open) { alert(`⏰ 쿠폰 주문 가능 시간이 아닙니다\n\n쿠폰 주문 시간: ${ev.start} ~ ${ev.end}`); return; }
       // 이벤트 중에는 쿠폰 주문에도 시간대별(10분) 주문 수 한도를 적용 — 그 사이 다른 사람이 채웠을 수 있어 다시 확인
       const slotLimit = settings.slotLimit ?? 3;
@@ -652,10 +652,10 @@ export default function App() {
         return;
       }
     }
-    // ② 하루 전체 잔수 한도 체크 (보너스 쿠폰 적용 시 건너뜀)
+    // ② 하루 전체 잔수 한도 체크 (보너스 쿠폰 적용 시 건너뜀 — 단, 쿠폰 전용 이벤트 중에는 쿠폰도 관리자 한도를 따름)
     const newDrinkQty = cart.reduce((s,i)=>s+i.qty, 0);
     let dailyData = null;
-    if (!bypassesLimit) {
+    if (!bypassesLimit || ev) {
       dailyData = await getDailyData();
       const dailyCount = dailyData.count||0;
       const todayLimit = settings.dailyLimit ?? DAILY_DRINK_LIMIT;
@@ -665,8 +665,8 @@ export default function App() {
         return;
       }
     }
-    // ③ 음료별 개별 하루 판매 한도 체크 (보너스 쿠폰 적용 시 건너뜀)
-    if (!bypassesLimit) {
+    // ③ 음료별 개별 하루 판매 한도 체크 (보너스 쿠폰 적용 시 건너뜀 — 단, 이벤트 중에는 적용)
+    if (!bypassesLimit || ev) {
       if (!dailyData) dailyData = await getDailyData();
       const drinkCounts = dailyData.drinkCounts||{};
       for (const item of cart) {
@@ -1018,7 +1018,7 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
 function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
   return (
     <div style={S.screen}>
-      <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>장바구니</span><span style={{width:36}}/></div>
+      <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>Cart</span><span style={{width:36}}/></div>
       <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
         {cart.length===0&&<div style={S.empty}>장바구니가 비어있습니다 🛒</div>}
         {cart.map(item=>(
@@ -1108,7 +1108,8 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const timeBlocked = isBeforeStart || isSlotFull(time) || !dayEnabled;
   // 쿠폰 전용 이벤트 중에는 쿠폰 적용 + 이벤트 시간대 안이어야 주문 가능
   const couponOnlyTooMany = !!couponOnly && newQty > 1; // 이벤트 중 쿠폰 주문은 1잔만
-  const couponOnlyBlocked = !!couponOnly && (!bonusApplied || !couponOnly.open || couponOnlyTooMany);
+  const couponOnlyDailyFull = !!couponOnly && dailyCount + newQty > dailyLimit; // 이벤트 중에도 하루 잔 수 한도는 그대로
+  const couponOnlyBlocked = !!couponOnly && (!bonusApplied || !couponOnly.open || couponOnlyTooMany || couponOnlyDailyFull);
   const canOrder=!!time&&!couponOnlyBlocked&&(slotBypass || !timeBlocked)&&(bonusBypassesLimit || !limitBlocked);
   return (
     <div style={S.overlay}>
@@ -1223,18 +1224,10 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                   <div style={{display:'flex',alignItems:'center',gap:8}}>
                     <span style={{fontSize:16}}>🎁</span>
-                    <div>
-                      <div style={{fontSize:13,fontWeight:700,color:P}}>보너스 쿠폰 적용됨 ({bonusState.code})</div>
-                      <div style={{fontSize:11,color:'#666',marginTop:1}}>
-                        {bonusType==='all' ? '운영시간·한도 제한 없이 주문할 수 있습니다' : '주문 한도 제한 없이 주문할 수 있습니다'}
-                      </div>
-                    </div>
+                    <div style={{fontSize:13,fontWeight:700,color:P}}>보너스 쿠폰 적용됨 ({bonusState.code})</div>
                   </div>
                   <button onClick={clearBonusCoupon} style={{fontSize:11,padding:'4px 10px',border:'1px solid #ddd',borderRadius:10,background:'#fff',color:'#888',cursor:'pointer'}}>취소</button>
                 </div>
-                {bonusType==='limit' && timeBlocked && (
-                  <div style={{fontSize:11,color:'#e65100',marginTop:8,paddingTop:8,borderTop:'1px solid #e0e0e0'}}>⚠️ 이 쿠폰은 한도만 풀어줍니다. 운영시간 제한은 그대로 적용되어 지금은 주문할 수 없습니다.</div>
-                )}
               </div>
             ) : (
               <div>
