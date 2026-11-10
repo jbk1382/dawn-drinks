@@ -605,7 +605,15 @@ export default function App() {
   const cartTotal = cart.reduce((s,i) => s+i.totalPrice, 0);
 
   const handleLogin = async (name) => { await setStoredUser(name); setUserName(name); };
-  const addToCart = (item) => { setCart(p => [...p,{...item,cartId:Date.now()}]); playCartSound(); notify("장바구니에 담겼습니다 🛒"); setScreen("list"); };
+  const addToCart = (item) => {
+    // 쿠폰 전용 이벤트 중에는 1잔만: 수량은 1로 고정하고, 이미 담긴 음료가 있으면 더 담지 않음
+    if (couponOnlyStatus(settings)) {
+      if (cart.length > 0) { notify("Cart에 이미 1잔이 담겨 있어요 (쿠폰 주문은 1잔만 가능해요)"); return; }
+      const unit = item.qty > 0 ? item.totalPrice / item.qty : item.totalPrice;
+      item = { ...item, qty: 1, totalPrice: unit };
+    }
+    setCart(p => [...p,{...item,cartId:Date.now()}]); playCartSound(); notify("장바구니에 담겼습니다 🛒"); setScreen("list");
+  };
 
   const handleOrder = async (info) => {
     // 보너스 쿠폰 서버측 재검증 — 다른 사람이 먼저 써버렸을 가능성 대비, type도 다시 확인
@@ -735,7 +743,7 @@ export default function App() {
       <div style={S.phone}>
         {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} deliveryHours={settings.deliveryHours} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(d.visible===false) return false; if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
-        {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} />}
+        {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} qtyLocked={!!couponOnlyStatus(settings)} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={handleCheckout} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
         {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={async id=>{
@@ -959,7 +967,7 @@ function ListScreen({ category, drinks, onBack, onSelect, cartCount, onCart }) {
 }
 
 // ─── DETAIL ───────────────────────────────────────────────────
-function DetailScreen({ drink, onBack, onAddToCart }) {
+function DetailScreen({ drink, onBack, onAddToCart, qtyLocked=false }) {
   const [selSz,setSelSz]=useState(drink.sizes[0]);
   const [qty,setQty]=useState(1);
   const [opts,setOpts]=useState(()=>Object.fromEntries(drink.options.map(o=>[o.id,o.default])));
@@ -1005,7 +1013,7 @@ function DetailScreen({ drink, onBack, onAddToCart }) {
         <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <button onClick={()=>setQty(q=>Math.max(1,q-1))} style={{width:32,height:32,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:'pointer',color:'#333',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
           <span style={{fontSize:15,fontWeight:700,minWidth:20,textAlign:'center'}}>{qty}</span>
-          <button onClick={()=>setQty(q=>q+1)} style={{width:32,height:32,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:'pointer',color:'#333',display:'flex',alignItems:'center',justifyContent:'center'}}>＋</button>
+          <button onClick={()=>!qtyLocked&&setQty(q=>q+1)} disabled={qtyLocked} aria-label={qtyLocked?'이벤트 중에는 1잔만 주문할 수 있어요':'수량 늘리기'} style={{width:32,height:32,borderRadius:50,border:'1.5px solid #ccc',background:'#f5f5f5',fontSize:18,cursor:qtyLocked?'not-allowed':'pointer',color:qtyLocked?'#ccc':'#333',opacity:qtyLocked?0.5:1,display:'flex',alignItems:'center',justifyContent:'center'}}>＋</button>
         </div>
         <button onClick={onBack} style={{flex:1,height:46,borderRadius:24,border:'1.5px solid #ddd',background:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',color:'#333'}}>닫기</button>
         <button onClick={()=>onAddToCart({drink,selectedSize:selSz,optionChoices:opts,qty,totalPrice:total})} style={{flex:2,height:46,borderRadius:24,border:'none',background:P,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>담기 {fmt(total)}</button>
