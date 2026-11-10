@@ -479,11 +479,12 @@ function localDateStr(d = new Date()) { return `${d.getFullYear()}-${String(d.ge
 function couponOnlyStatus(s) {
   if (!s?.couponOnlyEnabled) return null;
   if (s.couponOnlyDate && s.couponOnlyDate !== localDateStr()) return null; // 이벤트 날짜가 아니면 꺼진 것으로 봄
-  // orderStart = 주문 접수 시작 / start~end = 배달 가능 시간. 주문은 접수 시작부터 배달 마지막 시간까지 받음
-  const orderStart = s.couponOnlyOrderStart || '08:00';
+  // 주문 접수 시작 = 관리자 '⏰ 주문 접수 시작 시간' 설정(쿠폰도 동일하게 적용) / start~end = 배달 가능 시간
+  // 주문은 접수 시작부터 배달 마지막 시간까지 받음
+  const orderStart = s.orderStartEnabled && s.orderStartTime ? s.orderStartTime : null;
   const start = s.couponOnlyStart || '10:30', end = s.couponOnlyEnd || '14:30';
   const n = new Date(), now = n.getHours()*60 + n.getMinutes();
-  const before = now < parseTimeMin(orderStart), after = now > parseTimeMin(end);
+  const before = !!orderStart && now < parseTimeMin(orderStart), after = now > parseTimeMin(end);
   return { orderStart, start, end, before, after, open: !before && !after };
 }
 // 이벤트 시간대 안의 배달 시간(10분 단위, 지금 이후)
@@ -529,8 +530,7 @@ const INIT_SETTINGS = {
   orderStartEnabled: false,
   orderStartTime: "08:00",
   couponOnlyEnabled: false,   // 쿠폰 전용 주문 이벤트
-  couponOnlyOrderStart: "08:00", // 쿠폰 주문 접수 시작
-  couponOnlyStart: "10:30",      // 배달 가능 시작
+  couponOnlyStart: "10:30",      // 배달 가능 시작 (주문 접수 시작은 orderStartTime 설정을 따름)
   couponOnlyEnd: "14:30",
   couponOnlyDate: "",         // 이벤트 날짜(YYYY-MM-DD). 이 날에만 적용되고 지나면 자동으로 꺼짐
   quizEnabled: false,
@@ -636,7 +636,7 @@ export default function App() {
       // 이벤트 중 쿠폰 주문은 1인 1잔
       if (cart.reduce((n,i)=>n+(i.qty||0),0) > 1) { alert(`⚠️ 쿠폰 주문은 1잔만 가능해요\n\nCart에 음료를 1잔만 남기고 다시 주문해 주세요.`); return; }
       const evNow = couponOnlyStatus(settings);
-      if (!evNow.open) { alert(evNow.before ? `⏰ 아직 주문 접수 시간이 아니에요\n\n주문 접수: ${ev.orderStart}부터` : `⏰ 오늘 쿠폰 주문 시간이 끝났어요\n\n배달 가능 시간: ${ev.start} ~ ${ev.end}`); return; }
+      if (!evNow.open) { alert(evNow.before ? `⏰ 아직 주문 접수 시간이 아니에요\n\n주문 접수: ${evNow.orderStart}부터` : `⏰ 오늘 쿠폰 주문 시간이 끝났어요\n\n배달 가능 시간: ${ev.start} ~ ${ev.end}`); return; }
       // 이벤트 중에는 쿠폰 주문에도 시간대별(10분) 주문 수 한도를 적용 — 그 사이 다른 사람이 채웠을 수 있어 다시 확인
       const slotLimit = settings.slotLimit ?? 3;
       if (slotLimit > 0) {
@@ -1140,7 +1140,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
             <span style={{fontSize:20}}>🎟️</span>
             <div>
               <div style={{fontSize:13,fontWeight:700,color:couponOnly.open?P:'#e65100'}}>쿠폰 전용 주문 이벤트 중</div>
-              <div style={{fontSize:12,color:'#666',marginTop:2}}>{couponOnly.open?'아래에서 쿠폰을 적용해야 주문할 수 있어요.':couponOnly.before?'아직 주문 접수 시간이 아니에요.':'오늘 쿠폰 주문 시간이 끝났어요.'}<br/>주문 접수 {couponOnly.orderStart}부터 · 배달 {couponOnly.start} ~ {couponOnly.end}</div>
+              <div style={{fontSize:12,color:'#666',marginTop:2}}>{couponOnly.open?'아래에서 쿠폰을 적용해야 주문할 수 있어요.':couponOnly.before?'아직 주문 접수 시간이 아니에요.':'오늘 쿠폰 주문 시간이 끝났어요.'}<br/>{couponOnly.orderStart?`주문 접수 ${couponOnly.orderStart}부터 · `:''}배달 {couponOnly.start} ~ {couponOnly.end}</div>
             </div>
           </div>
         )}
@@ -1999,7 +1999,7 @@ function SettingsTab({ settings, onSave }) {
             <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.couponOnlyEnabled?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
           </button>
         </div>
-        {form.couponOnlyEnabled&&(()=>{ const os=form.couponOnlyOrderStart||'08:00', st=form.couponOnlyStart||'10:30', en=form.couponOnlyEnd||'14:30', bad=parseTimeMin(st)>parseTimeMin(en), badOrder=parseTimeMin(os)>parseTimeMin(en);
+        {form.couponOnlyEnabled&&(()=>{ const os=form.orderStartEnabled?(form.orderStartTime||'08:00'):null, st=form.couponOnlyStart||'10:30', en=form.couponOnlyEnd||'14:30', bad=parseTimeMin(st)>parseTimeMin(en), badOrder=!!os&&parseTimeMin(os)>parseTimeMin(en);
           const today=localDateStr(), dt=form.couponOnlyDate||'';
           const [, dm, dd] = dt.split('-').map(Number);
           const dayMsg = !dt ? {c:'#e65100',t:'⚠️ 날짜가 비어 있어요. 이대로면 끌 때까지 매일 적용됩니다.'}
@@ -2013,10 +2013,7 @@ function SettingsTab({ settings, onSave }) {
               <button onClick={()=>setForm(p=>({...p,couponOnlyDate:today}))} style={{padding:'0 14px',border:`1px solid ${P}`,borderRadius:10,background:'#fff',color:P,fontSize:13,fontWeight:700,cursor:'pointer'}}>오늘</button>
             </div>
             <div style={{fontSize:12,color:dayMsg.c,fontWeight:700,marginBottom:12}}>{dayMsg.t}</div>
-            <div style={{fontSize:12,color:'#555',marginBottom:6}}>주문 접수 시작 시간</div>
-            <select value={os} onChange={e=>setForm(p=>({...p,couponOnlyOrderStart:e.target.value}))} style={{width:'100%',padding:'10px 8px',border:`1.5px solid ${P}`,borderRadius:10,fontSize:14,background:'#fff',color:'#111',fontWeight:700,marginBottom:12}}>
-              {ALL_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-            </select>
+            <div style={{fontSize:12,color:'#555',marginBottom:12,background:'#fff',border:'1px solid #e0e0e0',borderRadius:10,padding:'8px 10px'}}>⏰ 주문 접수 시작: <b>{os?`${os}부터`:'제한 없음'}</b><br/><span style={{fontSize:11,color:'#888'}}>위쪽 '⏰ 주문 접수 시작 시간' 설정을 그대로 따릅니다 (쿠폰 주문도 동일)</span></div>
             <div style={{fontSize:12,color:'#555',marginBottom:6}}>배달 가능 시간</div>
             <div style={{display:'flex',gap:8,alignItems:'center'}}>
               <div style={{flex:1}}>
@@ -2037,8 +2034,8 @@ function SettingsTab({ settings, onSave }) {
               ? <div style={{fontSize:12,color:'#e53935',marginTop:8,textAlign:'center'}}>⚠️ 배달 끝 시간이 시작 시간보다 빨라요. 이대로면 주문을 받을 수 없어요.</div>
               : badOrder
               ? <div style={{fontSize:12,color:'#e53935',marginTop:8,textAlign:'center'}}>⚠️ 주문 접수 시작이 배달 끝 시간보다 늦어요. 이대로면 주문을 받을 수 없어요.</div>
-              : <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center',lineHeight:1.5}}>{os}부터 쿠폰 주문을 받고, 배달 시간은 {st} ~ {en} 안에서 고릅니다<br/>(배달 끝 시간 {en}이 지나면 주문 마감)</div>}
-            <div style={{fontSize:11,color:'#888',marginTop:6,lineHeight:1.5}}>· 이벤트 중에는 위쪽의 '주문 접수 시작 시간'과 요일별 배달 시간 대신 여기 설정을 씁니다.<br/>· 이벤트 중에는 쿠폰 주문도 '시간대별 최대 주문 수'(현재 {form.slotLimit??3}건)를 넘을 수 없습니다.<br/>· 쿠폰은 위 '보너스 쿠폰'이나 미션 쿠폰을 그대로 쓰면 됩니다.</div>
+              : <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center',lineHeight:1.5}}>{os?`${os}부터 `:''}쿠폰 주문을 받고, 배달 시간은 {st} ~ {en} 안에서 고릅니다<br/>(배달 끝 시간 {en}이 지나면 주문 마감)</div>}
+            <div style={{fontSize:11,color:'#888',marginTop:6,lineHeight:1.5}}>· 이벤트 중에는 요일별 배달 시간 대신 여기 배달 가능 시간을 씁니다.<br/>· 이벤트 중에는 쿠폰 주문도 '시간대별 최대 주문 수'(현재 {form.slotLimit??3}건)를 넘을 수 없습니다.<br/>· 쿠폰은 위 '보너스 쿠폰'이나 미션 쿠폰을 그대로 쓰면 됩니다.</div>
             <div style={{fontSize:11,color:P,marginTop:6,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
           </div>);
         })()}
