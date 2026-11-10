@@ -621,6 +621,8 @@ export default function App() {
     const ev = couponOnlyStatus(settings);
     if (ev) {
       if (!bonus) { alert(`🎟️ 지금은 쿠폰 전용 주문 이벤트 중입니다\n\n쿠폰을 적용해야 주문할 수 있어요.`); return; }
+      // 이벤트 중 쿠폰 주문은 1인 1잔
+      if (cart.reduce((n,i)=>n+(i.qty||0),0) > 1) { alert(`⚠️ 쿠폰 주문은 1잔만 가능해요\n\n장바구니에 음료를 1잔만 남기고 다시 주문해 주세요.`); return; }
       if (!couponOnlyStatus(settings).open) { alert(`⏰ 쿠폰 주문 가능 시간이 아닙니다\n\n쿠폰 주문 시간: ${ev.start} ~ ${ev.end}`); return; }
       // 이벤트 중에는 쿠폰 주문에도 시간대별(10분) 주문 수 한도를 적용 — 그 사이 다른 사람이 채웠을 수 있어 다시 확인
       const slotLimit = settings.slotLimit ?? 3;
@@ -1105,13 +1107,20 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const limitBlocked = dailyRemain<=0 || monthlyRemain<=0;
   const timeBlocked = isBeforeStart || isSlotFull(time) || !dayEnabled;
   // 쿠폰 전용 이벤트 중에는 쿠폰 적용 + 이벤트 시간대 안이어야 주문 가능
-  const couponOnlyBlocked = !!couponOnly && (!bonusApplied || !couponOnly.open);
+  const couponOnlyTooMany = !!couponOnly && newQty > 1; // 이벤트 중 쿠폰 주문은 1잔만
+  const couponOnlyBlocked = !!couponOnly && (!bonusApplied || !couponOnly.open || couponOnlyTooMany);
   const canOrder=!!time&&!couponOnlyBlocked&&(slotBypass || !timeBlocked)&&(bonusBypassesLimit || !limitBlocked);
   return (
     <div style={S.overlay}>
       <div style={{background:'#fff',borderRadius:'22px 22px 0 0',padding:'16px 20px 32px',position:'absolute',bottom:0,left:0,right:0,maxHeight:'90%',overflowY:'auto'}}>
         <div style={{width:36,height:4,background:'#ddd',borderRadius:2,margin:'0 auto 16px'}} />
         <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>주문 정보 입력</div>
+        {couponOnlyTooMany&&(
+          <div style={{background:'#ffebee',border:'1.5px solid #ef9a9a',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:20}}>☕</span>
+            <div style={{fontSize:13,fontWeight:700,color:'#c62828'}}>쿠폰 주문은 1잔만 가능해요</div>
+          </div>
+        )}
         {couponOnly&&(
           <div style={{background:couponOnly.open?PLIGHT:'#fff3e0',border:`1.5px solid ${couponOnly.open?P:'#ffcc80'}`,borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
             <span style={{fontSize:20}}>🎟️</span>
