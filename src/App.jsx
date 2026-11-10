@@ -612,7 +612,7 @@ export default function App() {
       const unit = item.qty > 0 ? item.totalPrice / item.qty : item.totalPrice;
       item = { ...item, qty: 1, totalPrice: unit };
     }
-    setCart(p => [...p,{...item,cartId:Date.now()}]); playCartSound(); notify("장바구니에 담겼습니다 🛒"); setScreen("list");
+    setCart(p => [...p,{...item,cartId:Date.now()}]); playCartSound(); notify("Cart에 담겼습니다 🛒"); setScreen("list");
   };
 
   const handleOrder = async (info) => {
@@ -1028,7 +1028,7 @@ function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
     <div style={S.screen}>
       <div style={S.navBar}><button onClick={onBack} style={S.backBtn}>‹</button><span style={S.navTitle}>Cart</span><span style={{width:36}}/></div>
       <div style={{flex:1,overflowY:'auto',minHeight:0,padding:'0 16px'}}>
-        {cart.length===0&&<div style={S.empty}>장바구니가 비어있습니다 🛒</div>}
+        {cart.length===0&&<div style={S.empty}>Cart가 비어있습니다 🛒</div>}
         {cart.map(item=>(
           <div key={item.cartId} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid #f5f5f5'}}>
             <DrinkImg src={item.drink.image} alt="" style={{width:60,height:60,borderRadius:12,objectFit:'cover',background:'#f5f5f5'}} />
