@@ -472,6 +472,22 @@ function getTimeSlotsForDay(cfg, isToday) {
   }
   return slots;
 }
+// ─── 쿠폰 전용 주문 이벤트 ────────────────────────────────────
+// 켜져 있으면 쿠폰 없는 일반 주문은 막고, 쿠폰 주문은 설정한 시간대 안에서만 받습니다.
+function couponOnlyStatus(s) {
+  if (!s?.couponOnlyEnabled) return null;
+  const start = s.couponOnlyStart || '10:30', end = s.couponOnlyEnd || '14:30';
+  const n = new Date(), now = n.getHours()*60 + n.getMinutes();
+  return { start, end, open: now >= parseTimeMin(start) && now <= parseTimeMin(end) };
+}
+// 이벤트 시간대 안의 배달 시간(10분 단위, 지금 이후)
+function getCouponOnlySlots(ev) {
+  if (!ev) return [];
+  const n = new Date(), now = n.getHours()*60 + n.getMinutes();
+  const s = parseTimeMin(ev.start), e = parseTimeMin(ev.end), slots = [];
+  for (let m = s; m <= e; m += 10) if (m >= now) slots.push(`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`);
+  return slots;
+}
 function groupByDate(orders) { return orders.reduce((g,o) => { const k=o.orderTime?o.orderTime.split('T')[0]:'?'; (g[k]=g[k]||[]).push(o); return g; }, {}); }
 function groupByMonth(orders) { return orders.reduce((g,o) => { const k=o.orderTime?o.orderTime.substring(0,7):'?'; (g[k]=g[k]||[]).push(o); return g; }, {}); }
 function groupByCustomer(orders) { return orders.reduce((g,o) => { const k=o.name||'미상'; (g[k]=g[k]||[]).push(o); return g; }, {}); }
@@ -506,6 +522,9 @@ const INIT_SETTINGS = {
   slotLimit: 3,
   orderStartEnabled: false,
   orderStartTime: "08:00",
+  couponOnlyEnabled: false,   // 쿠폰 전용 주문 이벤트
+  couponOnlyStart: "10:30",
+  couponOnlyEnd: "14:30",
   quizEnabled: false,
   quizTitle: "스쿨카페 이용 안내",
   quizQuestions: [
@@ -594,9 +613,15 @@ export default function App() {
     }
     const bypassesTime = bonus?.type === 'all';
     const bypassesLimit = bonus && (bonus.type === 'all' || bonus.type === 'limit');
+    // 쿠폰 전용 이벤트: 쿠폰 없이는 주문 불가, 이벤트 시간대 밖이면 주문 불가
+    const ev = couponOnlyStatus(settings);
+    if (ev) {
+      if (!bonus) { alert(`🎟️ 지금은 쿠폰 전용 주문 이벤트 중입니다\n\n쿠폰을 적용해야 주문할 수 있어요.`); return; }
+      if (!couponOnlyStatus(settings).open) { alert(`⏰ 쿠폰 주문 가능 시간이 아닙니다\n\n쿠폰 주문 시간: ${ev.start} ~ ${ev.end}`); return; }
+    }
 
     // ⓪ 주문 접수 시작 시간 체크 (전체 허용형 보너스 쿠폰 적용 시 건너뜀)
-    if (!bypassesTime && settings.orderStartEnabled && settings.orderStartTime) {
+    if (!ev && !bypassesTime && settings.orderStartEnabled && settings.orderStartTime) {
       const now = new Date();
       const [sh, sm] = settings.orderStartTime.split(':').map(Number);
       const startMin = sh*60+sm;
@@ -721,7 +746,7 @@ export default function App() {
   }
 }} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
-        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} orderStartEnabled={settings.orderStartEnabled} orderStartTime={settings.orderStartTime} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} missionCoupon={settings.missionEnabled ? getSavedMissionCoupon(settings.missionId) : null} />}
+        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} orderStartEnabled={settings.orderStartEnabled} orderStartTime={settings.orderStartTime} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} couponOnly={couponOnlyStatus(settings)} missionCoupon={settings.missionEnabled ? getSavedMissionCoupon(settings.missionId) : null} />}
         {missionOpen && (
           <div style={{position:'fixed',inset:0,zIndex:1000,background:'#fff',display:'flex',flexDirection:'column'}}>
             <iframe src={missionSrc(settings.missionUrl||INIT_SETTINGS.missionUrl, settings.missionId)} title="장애이해 미션" allow="autoplay; clipboard-write" style={{flex:1,border:0,width:'100%',height:'100%'}} />
@@ -1010,7 +1035,7 @@ function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
 }
 
 // ─── ORDER MODAL ──────────────────────────────────────────────
-function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, orderStartEnabled=false, orderStartTime="08:00", onCancel, onConfirm, cart, missionCoupon=null }) {
+function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, orderStartEnabled=false, orderStartTime="08:00", onCancel, onConfirm, cart, couponOnly=null, missionCoupon=null }) {
   const [dailyCount, setDailyCount] = useState(0);
   const [slotCounts, setSlotCounts] = useState({});
   useEffect(() => { getDailyData().then(d=>{ setDailyCount(d.count||0); setSlotCounts(d.slotCounts||{}); }); }, []);
@@ -1020,7 +1045,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const newQty = cart ? cart.reduce((s,i)=>s+i.qty,0) : 0;
   const dailyRemain = dailyLimit - dailyCount;
   const isBeforeStart = (() => {
-    if (!orderStartEnabled || !orderStartTime) return false;
+    if (couponOnly || !orderStartEnabled || !orderStartTime) return false;
     const n = new Date(); const [sh,sm] = orderStartTime.split(':').map(Number);
     return (n.getHours()*60+n.getMinutes()) < (sh*60+sm);
   })();
@@ -1043,15 +1068,15 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const bonusBypassesLimit = bonusApplied && (bonusType==='all' || bonusType==='limit');
 
   const isToday=date.value===dates[0].value;
-  const rawSlots=getTimeSlotsForDay(deliveryHours[date.dow], isToday);
+  const rawSlots=couponOnly ? getCouponOnlySlots(couponOnly) : getTimeSlotsForDay(deliveryHours[date.dow], isToday);
   // 운영시간 초월(전체 허용) 보너스 쿠폰 적용 시: 휴무·마감과 무관하게 전체 시간대를 선택 가능하게 함
-  const slots = bonusBypassesTime && rawSlots.length===0 ? ALL_TIME_OPTIONS : rawSlots;
-  const [time,setTime]=useState(()=>{ const s=getTimeSlotsForDay(deliveryHours[dates[0].dow],true); return s[0]||''; });
+  const slots = !couponOnly && bonusBypassesTime && rawSlots.length===0 ? ALL_TIME_OPTIONS : rawSlots;
+  const [time,setTime]=useState(()=>{ const s=couponOnly?getCouponOnlySlots(couponOnly):getTimeSlotsForDay(deliveryHours[dates[0].dow],true); return s[0]||''; });
   const [loading,setLoading]=useState(false);
   const [err,setErr]=useState("");
   // 시간대가 비어있다가 쿠폰 적용으로 슬롯이 새로 생기면 기본 시간을 채워줌
   useEffect(()=>{ if(!time && slots.length>0) setTime(slots[0]); }, [bonusBypassesTime, slots.length]);
-  const dayEnabled=deliveryHours[date.dow]?.enabled;
+  const dayEnabled=couponOnly ? true : deliveryHours[date.dow]?.enabled;
 
   const submit=async()=>{ if(!name.trim()){setErr("이름을 입력해주세요");return;} if(!isTakeout&&!location.trim()){setErr("배달 장소를 입력해주세요");return;} if(!time){setErr("배달 가능한 시간이 없습니다");return;} setErr(""); setLoading(true); await onConfirm({name:name.trim(),location:isTakeout?'🛍️ 테이크아웃: 1층 통합교육지원반':location.trim(),extraRequest:extraRequest.trim(),deliveryDate:date.value,deliveryLabel:date.label,deliveryTime:time,isTakeout,bonusCouponCode:bonusApplied?bonusState.code:null}); setLoading(false); };
   // 이번 달 사용 금액은 기기와 무관하게 실제 주문 기록에서 매번 다시 불러옵니다
@@ -1065,12 +1090,23 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const monthlyRemain = MONTHLY_LIMIT - monthlyUsed;
   const limitBlocked = dailyRemain<=0 || monthlyRemain<=0;
   const timeBlocked = isBeforeStart || isSlotFull(time) || !dayEnabled;
-  const canOrder=!!time&&(bonusBypassesTime || !timeBlocked)&&(bonusBypassesLimit || !limitBlocked);
+  // 쿠폰 전용 이벤트 중에는 쿠폰 적용 + 이벤트 시간대 안이어야 주문 가능
+  const couponOnlyBlocked = !!couponOnly && (!bonusApplied || !couponOnly.open);
+  const canOrder=!!time&&!couponOnlyBlocked&&(bonusBypassesTime || !timeBlocked)&&(bonusBypassesLimit || !limitBlocked);
   return (
     <div style={S.overlay}>
       <div style={{background:'#fff',borderRadius:'22px 22px 0 0',padding:'16px 20px 32px',position:'absolute',bottom:0,left:0,right:0,maxHeight:'90%',overflowY:'auto'}}>
         <div style={{width:36,height:4,background:'#ddd',borderRadius:2,margin:'0 auto 16px'}} />
         <div style={{fontWeight:800,fontSize:17,marginBottom:16}}>주문 정보 입력</div>
+        {couponOnly&&(
+          <div style={{background:couponOnly.open?PLIGHT:'#fff3e0',border:`1.5px solid ${couponOnly.open?P:'#ffcc80'}`,borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:20}}>🎟️</span>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:couponOnly.open?P:'#e65100'}}>쿠폰 전용 주문 이벤트 중</div>
+              <div style={{fontSize:12,color:'#666',marginTop:2}}>{couponOnly.open?'아래에서 쿠폰을 적용해야 주문할 수 있어요.':'지금은 쿠폰 주문 시간이 아니에요.'} (쿠폰 주문 시간 {couponOnly.start} ~ {couponOnly.end})</div>
+            </div>
+          </div>
+        )}
         {isBeforeStart&&(
           <div style={{background:'#fff3e0',border:'1.5px solid #ffcc80',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
             <span style={{fontSize:20}}>⏰</span>
@@ -1102,7 +1138,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
         </div>
         <div style={S.fLabel}>배달 시간</div>
         {!dayEnabled && !bonusBypassesTime ? <div style={{padding:'12px 14px',background:'#fff3e0',borderRadius:12,marginBottom:16,fontSize:13,color:'#e65100'}}>⚠️ {WDAY_FULL[date.dow]}은 배달 운영일이 아닙니다</div>
-         : slots.length===0 ? <div style={{padding:'12px 14px',background:'#fff3e0',borderRadius:12,marginBottom:16,fontSize:13,color:'#e65100'}}>⚠️ 오늘 주문 가능한 시간이 지났습니다. 내일을 선택해주세요.</div>
+         : slots.length===0 ? <div style={{padding:'12px 14px',background:'#fff3e0',borderRadius:12,marginBottom:16,fontSize:13,color:'#e65100'}}>⚠️ {couponOnly?`쿠폰 주문 시간(${couponOnly.start} ~ ${couponOnly.end})이 지났습니다.`:'오늘 주문 가능한 시간이 지났습니다. 내일을 선택해주세요.'}</div>
          : <div style={{marginBottom:14}}>
              {!dayEnabled&&bonusBypassesTime&&<div style={{fontSize:11,color:P,marginBottom:6}}>🎁 보너스 쿠폰으로 휴무일에도 시간 선택이 가능합니다</div>}
              {/* 시간대 그룹 선택 */}
@@ -1157,7 +1193,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
           </div>);
         })()}
         {/* 보너스 쿠폰 — 입력칸 하나, 한도 또는 운영시간 제한이 있을 때 노출 */}
-        {(limitBlocked||timeBlocked||bonusApplied)&&(
+        {(couponOnly||limitBlocked||timeBlocked||bonusApplied)&&(
           <div style={{borderRadius:12,padding:'12px 14px',marginBottom:12,background:bonusApplied?'#f0faf4':'#fafafa',border:`1.5px solid ${bonusApplied?P:'#e0e0e0'}`}}>
             {bonusApplied ? (
               <div>
@@ -1920,6 +1956,44 @@ function SettingsTab({ settings, onSave }) {
             <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
           </div>
         )}
+      </div>
+
+      {/* 쿠폰 전용 주문 이벤트 */}
+      <SH>🎟️ 쿠폰 전용 주문 이벤트</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:form.couponOnlyEnabled?12:0}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>쿠폰으로만 주문 받기</div>
+            <div style={{fontSize:11,color:'#888',marginTop:2}}>켜면 일반 주문은 막히고, 쿠폰을 적용한 주문만 아래 시간대에 받습니다</div>
+          </div>
+          <button onClick={()=>setForm(p=>({...p,couponOnlyEnabled:!p.couponOnlyEnabled}))} aria-label="쿠폰 전용 이벤트 켜기/끄기" style={{width:48,height:26,borderRadius:13,border:'none',background:form.couponOnlyEnabled?P:'#ccc',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}}>
+            <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.couponOnlyEnabled?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
+          </button>
+        </div>
+        {form.couponOnlyEnabled&&(()=>{ const st=form.couponOnlyStart||'10:30', en=form.couponOnlyEnd||'14:30', bad=parseTimeMin(st)>parseTimeMin(en);
+          return (<div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,color:'#555',marginBottom:6}}>시작 시간</div>
+                <select value={st} onChange={e=>setForm(p=>({...p,couponOnlyStart:e.target.value}))} style={{width:'100%',padding:'10px 8px',border:`1.5px solid ${P}`,borderRadius:10,fontSize:14,background:'#fff',color:'#111',fontWeight:700}}>
+                  {ALL_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div style={{paddingTop:20,color:'#888'}}>~</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,color:'#555',marginBottom:6}}>끝 시간</div>
+                <select value={en} onChange={e=>setForm(p=>({...p,couponOnlyEnd:e.target.value}))} style={{width:'100%',padding:'10px 8px',border:`1.5px solid ${P}`,borderRadius:10,fontSize:14,background:'#fff',color:'#111',fontWeight:700}}>
+                  {ALL_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+            {bad
+              ? <div style={{fontSize:12,color:'#e53935',marginTop:8,textAlign:'center'}}>⚠️ 끝 시간이 시작 시간보다 빨라요. 이대로면 주문을 받을 수 없어요.</div>
+              : <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>매일 {st} ~ {en} 에만 쿠폰 주문을 받습니다 (배달 시간도 이 안에서 고릅니다)</div>}
+            <div style={{fontSize:11,color:'#888',marginTop:6,lineHeight:1.5}}>· 이벤트 중에는 '주문 접수 시작 시간'과 요일별 배달 시간 대신 이 시간대를 씁니다.<br/>· 쿠폰은 위 '보너스 쿠폰'이나 미션 쿠폰을 그대로 쓰면 됩니다.</div>
+            <div style={{fontSize:11,color:P,marginTop:6,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
+          </div>);
+        })()}
       </div>
 
       {/* 장애이해 미션 이벤트 */}
