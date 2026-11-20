@@ -476,6 +476,11 @@ function getTimeSlotsForDay(cfg, isToday) {
 // 켜져 있으면 쿠폰 없는 일반 주문은 막고, 쿠폰 주문은 설정한 시간대 안에서만 받습니다.
 // 기기 시간 기준 오늘 날짜 'YYYY-MM-DD' (toISOString은 UTC라 아침 9시 전에는 하루 어긋남)
 function localDateStr(d = new Date()) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// 테이크아웃 전용: 켜져 있고 (날짜가 비었거나) 오늘이 지정 날짜면 배달 주문을 막음
+function isTakeoutOnly(s) {
+  if (!s?.takeoutOnlyEnabled) return false;
+  return !s.takeoutOnlyDate || s.takeoutOnlyDate === localDateStr();
+}
 function couponOnlyStatus(s) {
   if (!s?.couponOnlyEnabled) return null;
   if (s.couponOnlyDate && s.couponOnlyDate !== localDateStr()) return null; // 이벤트 날짜가 아니면 꺼진 것으로 봄
@@ -532,6 +537,8 @@ const INIT_SETTINGS = {
   couponOnlyEnabled: false,   // 쿠폰 전용 주문 이벤트
   couponOnlyStart: "10:30",      // 배달 가능 시작 (주문 접수 시작은 orderStartTime 설정을 따름)
   couponOnlyEnd: "14:30",
+  takeoutOnlyEnabled: false,  // 테이크아웃만 받기 (축제 등)
+  takeoutOnlyDate: "",        // 적용 날짜(YYYY-MM-DD). 이 날에만 적용되고 지나면 자동으로 꺼짐
   couponOnlyDate: "",         // 이벤트 날짜(YYYY-MM-DD). 이 날에만 적용되고 지나면 자동으로 꺼짐
   quizEnabled: false,
   quizTitle: "스쿨카페 이용 안내",
@@ -620,6 +627,11 @@ export default function App() {
   };
 
   const handleOrder = async (info) => {
+    // 테이크아웃 전용 날에는 배달 주문을 받지 않음
+    if (isTakeoutOnly(settings)) {
+      if (!info.isTakeout) { alert('🛍️ 오늘은 테이크아웃만 가능해요\n\n수령 방법을 테이크아웃으로 선택해 주세요.'); return; }
+      info = { ...info, location: '🛍️ 테이크아웃: 1층 통합교육지원반' };
+    }
     // 보너스 쿠폰 서버측 재검증 — 다른 사람이 먼저 써버렸을 가능성 대비, type도 다시 확인
     let bonus = null;
     if (info.bonusCouponCode) {
@@ -771,7 +783,7 @@ export default function App() {
   }
 }} /></ErrorBoundary>}
         {adminLoginModal && <AdminLoginModal correctPassword={settings.adminPassword||"admin1234"} onSuccess={()=>{setAdminLoginModal(false);setIsAdmin(true);setAdminTab("drinks");setScreen("admin");}} onCancel={()=>setAdminLoginModal(false)} />}
-        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} orderStartEnabled={settings.orderStartEnabled} orderStartTime={settings.orderStartTime} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} couponOnly={couponOnlyStatus(settings)} missionCoupon={settings.missionEnabled ? getSavedMissionCoupon(settings.missionId) : null} />}
+        {orderModal && <OrderModal totalPrice={cartTotal} userName={userName} deliveryHours={settings.deliveryHours} dailyLimit={settings.dailyLimit??15} slotLimit={settings.slotLimit??3} orderStartEnabled={settings.orderStartEnabled} orderStartTime={settings.orderStartTime} onCancel={()=>setOrderModal(false)} onConfirm={handleOrder} cart={cart} couponOnly={couponOnlyStatus(settings)} takeoutOnly={isTakeoutOnly(settings)} missionCoupon={settings.missionEnabled ? getSavedMissionCoupon(settings.missionId) : null} />}
         {missionOpen && (
           <div style={{position:'fixed',inset:0,zIndex:1000,background:'#fff',display:'flex',flexDirection:'column'}}>
             <iframe src={missionSrc(settings.missionUrl||INIT_SETTINGS.missionUrl, settings.missionId)} title="장애이해 미션" allow="autoplay; clipboard-write" style={{flex:1,border:0,width:'100%',height:'100%'}} />
@@ -1060,7 +1072,7 @@ function CartScreen({ cart, totalPrice, onBack, onRemove, onCheckout }) {
 }
 
 // ─── ORDER MODAL ──────────────────────────────────────────────
-function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, orderStartEnabled=false, orderStartTime="08:00", onCancel, onConfirm, cart, couponOnly=null, missionCoupon=null }) {
+function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLimit=3, orderStartEnabled=false, orderStartTime="08:00", onCancel, onConfirm, cart, couponOnly=null, takeoutOnly=false, missionCoupon=null }) {
   const [dailyCount, setDailyCount] = useState(0);
   const [slotCounts, setSlotCounts] = useState({});
   useEffect(() => { getDailyData().then(d=>{ setDailyCount(d.count||0); setSlotCounts(d.slotCounts||{}); }); }, []);
@@ -1079,7 +1091,7 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const [location,setLocation]=useState("");
   const [extraRequest,setExtraRequest]=useState("");
   const [date,setDate]=useState(dates[0]);
-  const [isTakeout, setIsTakeout] = useState(false);
+  const [isTakeout, setIsTakeout] = useState(takeoutOnly); // 테이크아웃 전용 날에는 처음부터 테이크아웃
   // 쿠폰: ① 보너스(한도 초과 허용) ② 운영시간 초월(시간+한도 모두 허용) — 서로 독립적으로 발급/적용
   // 보너스 쿠폰 — 입력칸 하나, 코드의 종류(type)에 따라 자동으로 풀어주는 범위가 달라짐
   const [bonusInput,setBonusInput]=useState(missionCoupon||''); // 미션 쿠폰이 있으면 미리 입력
@@ -1157,13 +1169,14 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
         <input value={name} onChange={e=>{setName(e.target.value);setErr("");}} placeholder="이름" style={S.mInput} />
         <div style={S.fLabel}>수령 방법</div>
         <div style={{display:'flex',gap:8,marginBottom:12}}>
-          <button onClick={()=>setIsTakeout(false)} style={{flex:1,padding:'10px 0',border:`2px solid ${!isTakeout?P:'#e0e0e0'}`,borderRadius:12,background:!isTakeout?PLIGHT:'#fff',color:!isTakeout?P:'#666',fontSize:13,fontWeight:700,cursor:'pointer'}}>
-            🚚 배달
+          <button onClick={()=>!takeoutOnly&&setIsTakeout(false)} disabled={takeoutOnly} style={{flex:1,padding:'10px 0',border:`2px solid ${!isTakeout?P:'#e0e0e0'}`,borderRadius:12,background:takeoutOnly?'#f5f5f5':!isTakeout?PLIGHT:'#fff',color:takeoutOnly?'#bbb':!isTakeout?P:'#666',fontSize:13,fontWeight:700,cursor:takeoutOnly?'not-allowed':'pointer'}}>
+            🚚 배달{takeoutOnly&&' (오늘 쉬어요)'}
           </button>
           <button onClick={()=>{setIsTakeout(true);setLocation('');setErr('');}} style={{flex:1,padding:'10px 0',border:`2px solid ${isTakeout?P:'#e0e0e0'}`,borderRadius:12,background:isTakeout?PLIGHT:'#fff',color:isTakeout?P:'#666',fontSize:13,fontWeight:700,cursor:'pointer'}}>
             🛍️ 테이크아웃
           </button>
         </div>
+        {takeoutOnly&&<div style={{fontSize:12,color:'#e65100',marginTop:-6,marginBottom:10,paddingLeft:4}}>오늘은 테이크아웃만 가능해요</div>}
         <div style={S.fLabel}>배달 장소</div>
         <input value={location} onChange={e=>{setLocation(e.target.value);setErr("");}} placeholder={isTakeout?'테이크아웃: 1층 통합교육지원반':'예) 3학년 2반, 교무실'} disabled={isTakeout} style={{...S.mInput,background:isTakeout?'#f5f5f5':'#fff',color:isTakeout?'#aaa':'#111',cursor:isTakeout?'not-allowed':'text'}} />
         {isTakeout&&<div style={{fontSize:12,color:P,marginTop:-8,marginBottom:10,paddingLeft:4}}>🛍️ 테이크아웃: 1층 통합교육지원반</div>}
@@ -1985,6 +1998,36 @@ function SettingsTab({ settings, onSave }) {
             <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
           </div>
         )}
+      </div>
+
+      {/* 테이크아웃 전용 */}
+      <SH>🛍️ 테이크아웃 전용</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:form.takeoutOnlyEnabled?12:0}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>테이크아웃만 받기</div>
+            <div style={{fontSize:11,color:'#888',marginTop:2}}>켜면 주문 창에서 배달을 고를 수 없고, 테이크아웃(1층 통합교육지원반)으로만 주문을 받습니다</div>
+          </div>
+          <button onClick={()=>setForm(p=>({...p,takeoutOnlyEnabled:!p.takeoutOnlyEnabled,takeoutOnlyDate:!p.takeoutOnlyEnabled&&!p.takeoutOnlyDate?localDateStr():p.takeoutOnlyDate}))} aria-label="테이크아웃 전용 켜기/끄기" style={{width:48,height:26,borderRadius:13,border:'none',background:form.takeoutOnlyEnabled?P:'#ccc',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}}>
+            <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.takeoutOnlyEnabled?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
+          </button>
+        </div>
+        {form.takeoutOnlyEnabled&&(()=>{ const today=localDateStr(), dt=form.takeoutOnlyDate||'';
+          const [, dm, dd] = dt.split('-').map(Number);
+          const msg = !dt ? {c:'#e65100',t:'⚠️ 날짜가 비어 있어요. 이대로면 끌 때까지 매일 테이크아웃만 받습니다.'}
+            : dt===today ? {c:P,t:'✅ 오늘 적용 중 (배달 주문 안 받음)'}
+            : dt<today ? {c:'#e65100',t:`⏹ ${dm}월 ${dd}일이 지나 자동으로 꺼져 있어요 (배달 정상)`}
+            : {c:'#555',t:`📅 ${dm}월 ${dd}일에 적용될 예정 (그 전까지는 배달 정상)`};
+          return (<div>
+            <div style={{fontSize:12,color:'#555',marginBottom:6}}>적용 날짜 (이 날에만 적용, 지나면 자동으로 꺼짐)</div>
+            <div style={{display:'flex',gap:8,marginBottom:6}}>
+              <input type="date" value={dt} min={today} onChange={e=>setForm(p=>({...p,takeoutOnlyDate:e.target.value}))} style={{flex:1,boxSizing:'border-box',padding:'9px 10px',border:`1.5px solid ${P}`,borderRadius:10,fontSize:16,background:'#fff',color:'#111'}} />
+              <button onClick={()=>setForm(p=>({...p,takeoutOnlyDate:today}))} style={{padding:'0 14px',border:`1px solid ${P}`,borderRadius:10,background:'#fff',color:P,fontSize:13,fontWeight:700,cursor:'pointer'}}>오늘</button>
+            </div>
+            <div style={{fontSize:12,color:msg.c,fontWeight:700}}>{msg.t}</div>
+            <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
+          </div>);
+        })()}
       </div>
 
       {/* 쿠폰 전용 주문 이벤트 */}
