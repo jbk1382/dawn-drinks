@@ -2159,10 +2159,10 @@ function SettingsTab({ settings, onSave }) {
             <div style={{fontSize:36,fontWeight:800,color:P}}>{form.dailyLimit??15}</div>
             <div style={{fontSize:12,color:'#888'}}>잔 / 하루</div>
           </div>
-          <button onClick={()=>setForm(p=>({...p,dailyLimit:Math.min(100,(p.dailyLimit??15)+1)}))} style={{width:40,height:40,borderRadius:50,border:`1.5px solid ${P}`,background:'#fff',fontSize:20,cursor:'pointer',color:P,fontWeight:700}}>＋</button>
+          <button onClick={()=>setForm(p=>({...p,dailyLimit:Math.min(150,(p.dailyLimit??15)+1)}))} style={{width:40,height:40,borderRadius:50,border:`1.5px solid ${P}`,background:'#fff',fontSize:20,cursor:'pointer',color:P,fontWeight:700}}>＋</button>
         </div>
         <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
-          {[5,10,15,20,30,50].map(n=>(
+          {[10,20,30,50,100,150].map(n=>(
             <button key={n} onClick={()=>setForm(p=>({...p,dailyLimit:n}))} style={{flex:1,minWidth:40,padding:'6px 0',border:`1.5px solid ${(form.dailyLimit??15)===n?P:'#ddd'}`,borderRadius:20,background:(form.dailyLimit??15)===n?P:'#fff',color:(form.dailyLimit??15)===n?'#fff':'#555',fontSize:13,fontWeight:700,cursor:'pointer'}}>{n}잔</button>
           ))}
         </div>
