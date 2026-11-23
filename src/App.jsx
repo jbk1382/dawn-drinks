@@ -476,6 +476,19 @@ function getTimeSlotsForDay(cfg, isToday) {
 // 켜져 있으면 쿠폰 없는 일반 주문은 막고, 쿠폰 주문은 설정한 시간대 안에서만 받습니다.
 // 기기 시간 기준 오늘 날짜 'YYYY-MM-DD' (toISOString은 UTC라 아침 9시 전에는 하루 어긋남)
 function localDateStr(d = new Date()) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// 손님에게 보여 줄 사이즈: 숨김 사이즈는 빼고, 행사용 일괄 사이즈가 적용 중이면 그 사이즈만
+function sizeOnlyActive(s) {
+  if (!s?.sizeOnlyEnabled || !s.sizeOnlyLabel) return null;
+  if (s.sizeOnlyDate && s.sizeOnlyDate !== localDateStr()) return null;
+  return s.sizeOnlyLabel;
+}
+function visibleSizes(drink, s) {
+  const all = drink?.sizes || [];
+  const only = sizeOnlyActive(s);
+  if (only) { const hit = all.filter(z => z.label === only); if (hit.length) return hit.slice(0, 1); } // 행사 사이즈가 있으면 그것만 (숨김이어도)
+  const shown = all.filter(z => !z.hidden);
+  return shown.length ? shown : all.slice(0, 1); // 모두 숨겼으면 첫 사이즈라도 보여 줌
+}
 // 테이크아웃 전용: 켜져 있고 (날짜가 비었거나) 오늘이 지정 날짜면 배달 주문을 막음
 function isTakeoutOnly(s) {
   if (!s?.takeoutOnlyEnabled) return false;
@@ -537,6 +550,9 @@ const INIT_SETTINGS = {
   couponOnlyEnabled: false,   // 쿠폰 전용 주문 이벤트
   couponOnlyStart: "10:30",      // 배달 가능 시작 (주문 접수 시작은 orderStartTime 설정을 따름)
   couponOnlyEnd: "14:30",
+  sizeOnlyEnabled: false,     // 행사용 일괄 사이즈 (모든 음료를 한 사이즈로만 판매)
+  sizeOnlyLabel: "M",
+  sizeOnlyDate: "",           // 적용 날짜(YYYY-MM-DD). 이 날에만 적용되고 지나면 자동으로 꺼짐
   takeoutOnlyEnabled: false,  // 테이크아웃만 받기 (축제 등)
   takeoutOnlyDate: "",        // 적용 날짜(YYYY-MM-DD). 이 날에만 적용되고 지나면 자동으로 꺼짐
   couponOnlyDate: "",         // 이벤트 날짜(YYYY-MM-DD). 이 날에만 적용되고 지나면 자동으로 꺼짐
@@ -760,7 +776,7 @@ export default function App() {
       <div style={S.phone}>
         {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} deliveryHours={settings.deliveryHours} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(d.visible===false) return false; if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
-        {screen==="detail"   && selDrink && <DetailScreen drink={selDrink} onBack={()=>setScreen("list")} onAddToCart={addToCart} qtyLocked={!!couponOnlyStatus(settings)} />}
+        {screen==="detail"   && selDrink && <DetailScreen drink={{...selDrink, sizes: visibleSizes(selDrink, settings)}} onBack={()=>setScreen("list")} onAddToCart={addToCart} qtyLocked={!!couponOnlyStatus(settings)} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={handleCheckout} />}
         {screen==="history"  && <HistoryScreen userName={userName} onBack={()=>setScreen("home")} />}
         {screen==="admin"    && <AdminScreen drinks={drinks} cats={cats} settings={settings} activeTab={adminTab} onTabChange={setAdminTab} onBack={()=>{setScreen("home");setIsAdmin(false);}} onEdit={d=>{setEditDrink(d);setScreen("adminEdit");}} onNew={()=>{setEditDrink(null);setScreen("adminEdit");}} onDelete={async id=>{
@@ -1389,7 +1405,7 @@ function AdminScreen({ drinks, cats, settings, activeTab, onTabChange, onBack, o
         {activeTab==="drinks"     && <DrinksTab drinks={drinks} onEdit={onEdit} onNew={onNew} onDelete={onDelete} onReorder={onReorder} onToggleVisible={onToggleVisible} onSave={onSaveDrinks} />}
         {activeTab==="categories" && <CategoriesTab cats={cats} onToggle={onToggleCat} onUpdate={onUpdateCat} onAdd={onAddCat} onReorder={onReorderCats} />}
         {activeTab==="orders"     && <AdminOrdersTab onOrderDeleted={onOrderDeleted} />}
-        {activeTab==="settings"   && <SettingsTab settings={settings} onSave={onSaveSettings} />}
+        {activeTab==="settings"   && <SettingsTab settings={settings} drinks={drinks} onSave={onSaveSettings} />}
       </div>
     </div>
   );
@@ -1768,7 +1784,7 @@ function CouponManager() {
     </div>
   );
 }
-function SettingsTab({ settings, onSave }) {
+function SettingsTab({ settings, drinks=[], onSave }) {
   const [form,setForm]=useState({...INIT_SETTINGS,...settings,school:{...INIT_SETTINGS.school,...settings.school},banner:{...INIT_SETTINGS.banner,...settings.banner},deliveryHours:{...INIT_DH,...settings.deliveryHours},themeId:settings.themeId||'green',dailyLimit:settings.dailyLimit??15,slotLimit:settings.slotLimit??3,orderStartEnabled:settings.orderStartEnabled??false,orderStartTime:settings.orderStartTime||'08:00',quizEnabled:settings.quizEnabled??false,quizTitle:settings.quizTitle||INIT_SETTINGS.quizTitle,quizQuestions:(settings.quizQuestions&&settings.quizQuestions.length)?settings.quizQuestions:INIT_SETTINGS.quizQuestions,consentText:settings.consentText??INIT_SETTINGS.consentText});
   const [saved,setSaved]=useState(false);
   const [testing,setTesting]=useState(null);
@@ -1999,6 +2015,46 @@ function SettingsTab({ settings, onSave }) {
             <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
           </div>
         )}
+      </div>
+
+      {/* 행사용 일괄 사이즈 */}
+      <SH>🥤 행사용 일괄 사이즈</SH>
+      <div style={{background:'#f8f8f8',borderRadius:14,padding:14,marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:form.sizeOnlyEnabled?12:0}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>모든 음료를 한 사이즈로만 받기</div>
+            <div style={{fontSize:11,color:'#888',marginTop:2}}>음료별 사이즈는 지우지 않고, 적용하는 날에만 고른 사이즈 하나로 보여 줍니다</div>
+          </div>
+          <button onClick={()=>setForm(p=>({...p,sizeOnlyEnabled:!p.sizeOnlyEnabled,sizeOnlyDate:!p.sizeOnlyEnabled&&!p.sizeOnlyDate?localDateStr():p.sizeOnlyDate}))} aria-label="행사용 일괄 사이즈 켜기/끄기" style={{width:48,height:26,borderRadius:13,border:'none',background:form.sizeOnlyEnabled?P:'#ccc',cursor:'pointer',position:'relative',flexShrink:0,transition:'background 0.2s'}}>
+            <div style={{width:20,height:20,borderRadius:50,background:'#fff',position:'absolute',top:3,left:form.sizeOnlyEnabled?25:3,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}} />
+          </button>
+        </div>
+        {form.sizeOnlyEnabled&&(()=>{ const today=localDateStr(), dt=form.sizeOnlyDate||'', lb=form.sizeOnlyLabel||'M';
+          const labels=[...new Set((drinks||[]).flatMap(d=>(d.sizes||[]).map(z=>z.label)).filter(Boolean))];
+          const missing=(drinks||[]).filter(d=>!(d.sizes||[]).some(z=>z.label===lb));
+          const [, dm, dd] = dt.split('-').map(Number);
+          const msg = !dt ? {c:'#e65100',t:'⚠️ 날짜가 비어 있어요. 이대로면 끌 때까지 매일 적용됩니다.'}
+            : dt===today ? {c:P,t:`✅ 오늘 적용 중 (모든 음료 ${lb} 사이즈)`}
+            : dt<today ? {c:'#e65100',t:`⏹ ${dm}월 ${dd}일이 지나 자동으로 꺼져 있어요 (평소 사이즈)`}
+            : {c:'#555',t:`📅 ${dm}월 ${dd}일에 적용될 예정 (그 전까지는 평소 사이즈)`};
+          return (<div>
+            <div style={{fontSize:12,color:'#555',marginBottom:6}}>적용할 사이즈</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+              {(labels.length?labels:['M']).map(l=>{ const on=lb===l; const n=(drinks||[]).filter(d=>(d.sizes||[]).some(z=>z.label===l)).length;
+                return <button key={l} onClick={()=>setForm(p=>({...p,sizeOnlyLabel:l}))} style={{border:`1.5px solid ${on?P:'#ddd'}`,background:on?P:'#fff',color:on?'#fff':'#555',borderRadius:16,padding:'6px 14px',fontSize:13,fontWeight:700,cursor:'pointer'}}>{l} <span style={{fontSize:11,fontWeight:400,opacity:0.85}}>({n}개 메뉴)</span></button>; })}
+            </div>
+            {missing.length>0
+              ? <div style={{fontSize:11,color:'#e65100',marginBottom:10,lineHeight:1.5}}>⚠️ {lb} 사이즈가 없는 메뉴 {missing.length}개는 평소 사이즈 그대로 보여요: {missing.map(d=>d.name).join(', ')}</div>
+              : <div style={{fontSize:11,color:P,marginBottom:10}}>모든 메뉴에 {lb} 사이즈가 있어요</div>}
+            <div style={{fontSize:12,color:'#555',marginBottom:6}}>적용 날짜 (이 날에만 적용, 지나면 자동으로 꺼짐)</div>
+            <div style={{display:'flex',gap:8,marginBottom:6}}>
+              <input type="date" value={dt} min={today} onChange={e=>setForm(p=>({...p,sizeOnlyDate:e.target.value}))} style={{flex:1,boxSizing:'border-box',padding:'9px 10px',border:`1.5px solid ${P}`,borderRadius:10,fontSize:16,background:'#fff',color:'#111'}} />
+              <button onClick={()=>setForm(p=>({...p,sizeOnlyDate:today}))} style={{padding:'0 14px',border:`1px solid ${P}`,borderRadius:10,background:'#fff',color:P,fontSize:13,fontWeight:700,cursor:'pointer'}}>오늘</button>
+            </div>
+            <div style={{fontSize:12,color:msg.c,fontWeight:700}}>{msg.t}</div>
+            <div style={{fontSize:11,color:P,marginTop:8,textAlign:'center'}}>※ 아래 '전체 설정 저장'을 눌러야 적용됩니다</div>
+          </div>);
+        })()}
       </div>
 
       {/* 테이크아웃 전용 */}
@@ -2443,12 +2499,14 @@ function AdminEditScreen({ drink, cats, onBack, onSave }) {
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>컵 사이즈</div>
         {(form.sizes||[]).map((sz,i)=>(
           <div key={i} style={{display:'flex',gap:8,marginBottom:8,alignItems:'center'}}>
-            <input value={sz.label} onChange={e=>{const s=[...(form.sizes||[])];s[i]={...s[i],label:e.target.value??''};upd('sizes',s);}} style={{...S.input,width:60,marginBottom:0}} />
+            <input value={sz.label} onChange={e=>{const s=[...(form.sizes||[])];s[i]={...s[i],label:e.target.value??''};upd('sizes',s);}} style={{...S.input,width:60,marginBottom:0,opacity:sz.hidden?0.5:1}} />
             <input value={sz.ml} type="number" onChange={e=>{const s=[...(form.sizes||[])];s[i]={...s[i],ml:Number(e.target.value)||0};upd('sizes',s);}} style={{...S.input,flex:1,marginBottom:0}} placeholder="ml" />
             <input value={sz.price} type="number" onChange={e=>{const s=[...(form.sizes||[])];s[i]={...s[i],price:Number(e.target.value)||0};upd('sizes',s);}} style={{...S.input,flex:1,marginBottom:0}} placeholder="+원" />
+            <button onClick={()=>{const s=[...(form.sizes||[])];s[i]={...s[i],hidden:!s[i].hidden};upd('sizes',s);}} title={sz.hidden?'숨김 해제':'손님 화면에서 숨기기'} style={{flexShrink:0,padding:'8px 8px',border:`1px solid ${sz.hidden?'#bbb':P}`,borderRadius:8,background:sz.hidden?'#f0f0f0':'#fff',color:sz.hidden?'#888':P,fontSize:12,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>{sz.hidden?'🙈 숨김':'👁 표시'}</button>
             <button onClick={()=>upd('sizes',form.sizes.filter((_,j)=>j!==i))} style={{...S.delBtn,padding:'8px'}}>✕</button>
           </div>
         ))}
+        {(form.sizes||[]).length>0&&(form.sizes||[]).every(z=>z.hidden)&&<div style={{fontSize:11,color:'#e65100',marginBottom:6}}>⚠️ 모든 사이즈를 숨기면 첫 번째 사이즈가 그대로 보여요</div>}
         <button onClick={()=>upd('sizes',[...form.sizes,{label:'XL',ml:591,price:1000}])} style={S.addRowBtn}>+ 사이즈 추가</button>
         <div style={{padding:'4px 0 8px',fontSize:15,fontWeight:700}}>퍼스널 옵션</div>
         {(form.options||[]).map((opt,idx)=>(
