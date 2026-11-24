@@ -160,7 +160,26 @@ async function adoptIssuedMissionCoupon(code) {
   } catch (e) { console.error('미션 쿠폰 확인 실패', e); }
   return false;
 }
-async function issueMissionCoupon(missionId, userName) {
+// 같은 기기에서 동시에 두 번 요청돼도(게임의 쿠폰 요청 + 완료 신호 등) 한 장만 발급되게 묶음
+const missionIssuing = new Map();
+function issueMissionCoupon(missionId, userName) {
+  if (!missionIssuing.has(missionId)) missionIssuing.set(missionId, issueMissionCouponOnce(missionId, userName).finally(() => missionIssuing.delete(missionId)));
+  return missionIssuing.get(missionId);
+}
+// 주문 직전에 이 기기의 미션 쿠폰을 준비: 이미 쓴 쿠폰이 있으면 새로 주지 않음(1인 1개), 없으면 순서대로 발급
+async function ensureMissionCoupon(missionId, userName) {
+  const saved = readSavedMissionCoupon(missionId);
+  if (saved) {
+    let used = false; try { used = localStorage.getItem('daun_coupon_used_' + saved.code) === '1'; } catch { /* 무시 */ }
+    if (used) {
+      // 같은 회차에서 이미 쓴 경우만 막음 (관리자가 '쿠폰 발급 초기화'를 했다면 새 회차라 다시 받을 수 있음)
+      try { const p = (await getDoc(doc(db, 'missionCoupons', missionId))).data(); if ((p?.round || null) === (saved.round || null)) return { used: true }; }
+      catch { return { used: true }; }
+    }
+  }
+  return issueMissionCoupon(missionId, userName);
+}
+async function issueMissionCouponOnce(missionId, userName) {
   const saved = readSavedMissionCoupon(missionId);
   const ref = doc(db, 'missionCoupons', missionId);
   let round = null;
@@ -736,11 +755,19 @@ export default function App() {
   const handleSaveSettings = async (s) => { setSettings(s); await saveStoredSettings(s); notify("설정 저장됨 ✅"); };
 
   // 주문하기: 미션 이벤트가 켜져 있고 아직 안 했으면 미션 먼저
+  // 미션을 마친 기기(게임 완료·스킵·예전에 해 본 기기)에 쿠폰을 순서대로 발급해 주문창에 바로 적용
+  const openOrderWithMissionCoupon = async () => {
+    if (settings.missionEnabled && settings.missionId) {
+      const r = await ensureMissionCoupon(settings.missionId, userName);
+      if (r?.code) notify('🎟️ 미션 쿠폰이 주문창에 적용됐어요');
+      else if (r?.used) notify('✅ 이 기기는 미션 쿠폰을 이미 사용했어요');
+      else if (r?.error) notify('⚠️ ' + r.error);
+    }
+    setOrderModal(true);
+  };
   const handleCheckout = () => {
     if (settings.missionEnabled && settings.missionId && !getMissionDone(settings.missionId)) { setMissionOpen(true); return; }
-    // 미션을 건너뛰는 이유를 알려 줌 (이 기기에서 이미 완료한 경우)
-    if (settings.missionEnabled && settings.missionId) notify('✅ 이 기기는 장애이해 미션을 이미 마쳤어요');
-    setOrderModal(true);
+    openOrderWithMissionCoupon();
   };
 
   // 미션 게임(iframe)이 보내는 메시지 받기: 쿠폰 요청, 완료
@@ -758,7 +785,7 @@ export default function App() {
       if (e.data.type !== 'DAUN_MISSION_COMPLETE') return;
       setMissionDone(settings.missionId);
       setMissionOpen(false);
-      setOrderModal(true);
+      openOrderWithMissionCoupon(); // 스킵으로 끝나도 쿠폰 발급
       try { await addDoc(collection(db,'missionLogs'), { missionId: settings.missionId, userName: userName||'', ...(e.data.result||{}), at: new Date().toISOString() }); }
       catch (err) { console.error('미션 기록 실패', err); }
     };
@@ -1116,6 +1143,8 @@ function OrderModal({ totalPrice, userName, deliveryHours, dailyLimit=15, slotLi
   const [bonusChecking,setBonusChecking]=useState(false);
   const applyBonusCoupon=async()=>{ if(!bonusInput.trim())return; setBonusChecking(true); setBonusState(await checkCoupon(bonusInput)); setBonusChecking(false); };
   const clearBonusCoupon=()=>{ setBonusState(null); setBonusInput(''); };
+  // 미션 쿠폰이 준비돼 있으면 [적용]을 누르지 않아도 바로 적용
+  useEffect(()=>{ if(missionCoupon) applyBonusCoupon(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const bonusApplied = bonusState?.ok===true;
   const bonusType = bonusState?.type; // 'limit' | 'all'
   const bonusBypassesTime = bonusApplied && bonusType==='all';
