@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { db } from './firebase';
-import { doc, getDoc, setDoc, deleteDoc, collection, addDoc, getDocs, query, where, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, addDoc, getDocs, query, where, runTransaction, onSnapshot } from 'firebase/firestore';
 import React from 'react';
 
 import { BannerFx, BannerFxSettings } from './BannerFx';
@@ -228,6 +228,39 @@ async function resetMissionCouponPool(missionId) {
   return issued.length;
 }
 
+// 서버(또는 기기 저장본)의 설정에 빠진 값을 기본값으로 채움
+function normalizeSettings(st) {
+  return {
+          ...INIT_SETTINGS, ...st,
+          school: { ...INIT_SETTINGS.school, ...(st.school||{}) },
+          banner: { ...INIT_SETTINGS.banner, ...(st.banner||{}) },
+          deliveryHours: { ...INIT_DH, ...(st.deliveryHours||{}) },
+          adminPassword: st.adminPassword || INIT_SETTINGS.adminPassword,
+          themeId: st.themeId || INIT_SETTINGS.themeId,
+          // 예전 게임 주소가 자동으로 저장돼 있던 경우 → 도트판으로. 관리자가 직접 고른 주소는 그대로.
+          missionUrl: (!st.missionUrl || (st.missionUrl === LEGACY_MISSION_URL && !st.missionUrlManual)) ? INIT_SETTINGS.missionUrl : st.missionUrl,
+          dailyLimit: st.dailyLimit ?? INIT_SETTINGS.dailyLimit,
+          slotLimit: st.slotLimit ?? INIT_SETTINGS.slotLimit,
+          orderStartEnabled: st.orderStartEnabled ?? INIT_SETTINGS.orderStartEnabled,
+          orderStartTime: st.orderStartTime || INIT_SETTINGS.orderStartTime,
+          quizEnabled: st.quizEnabled ?? INIT_SETTINGS.quizEnabled,
+          quizTitle: st.quizTitle || INIT_SETTINGS.quizTitle,
+          quizQuestions: (st.quizQuestions && st.quizQuestions.length) ? st.quizQuestions : INIT_SETTINGS.quizQuestions,
+          consentText: st.consentText ?? INIT_SETTINGS.consentText,
+        };
+}
+// ─── 마지막으로 받은 설정·메뉴를 기기에 저장 (다음에 켤 때 옛날 기본값 대신 바로 보여 주기) ───
+// 관리자 비밀번호는 저장하지 않음
+const BOOT_CACHE_KEY = 'daun_boot_cache_v1';
+function readBootCache() { try { return JSON.parse(localStorage.getItem(BOOT_CACHE_KEY) || 'null'); } catch { return null; } }
+function writeBootCache(part) {
+  try {
+    const cur = readBootCache() || {};
+    const next = { ...cur, ...part, at: new Date().toISOString() };
+    if (next.settings) { const { adminPassword: _pw, ...rest } = next.settings; next.settings = rest; } // eslint-disable-line no-unused-vars
+    localStorage.setItem(BOOT_CACHE_KEY, JSON.stringify(next));
+  } catch { /* 저장 공간 부족 등은 무시 */ }
+}
 async function getStoredSettings() {
   try { const s=await getDoc(doc(db,'config','settings')); return s.exists()?s.data():null; } catch { return null; }
 }
@@ -589,7 +622,7 @@ const INIT_SETTINGS = {
 
 // ─── APP ──────────────────────────────────────────────────────
 export default function App() {
-  const [booting, setBooting] = useState(true);
+  const [booting, setBooting] = useState(() => { const c = readBootCache(); return !(c?.settings && c?.drinks); }); // 저장본이 있으면 바로 시작
   const [dailyCountApp, setDailyCountApp] = useState(0);
   useEffect(()=>{ getDailyCount().then(setDailyCountApp); },[]);
   const [userName, setUserName] = useState(null);
@@ -598,9 +631,11 @@ export default function App() {
   const [selCat, setSelCat] = useState(null);
   const [selDrink, setSelDrink] = useState(null);
   const [cart, setCart] = useState([]);
-  const [drinks, setDrinks] = useState(INIT_DRINKS);
-  const [cats, setCats] = useState(INIT_CATS);
-  const [settings, setSettings] = useState(INIT_SETTINGS);
+  // 기기에 저장된 마지막 설정·메뉴가 있으면 그것으로 시작 (옛날 기본 화면이 잠깐 뜨지 않게)
+  const [bootCache] = useState(() => { const c = readBootCache(); return c?.settings && c?.drinks ? c : null; });
+  const [drinks, setDrinks] = useState(() => bootCache?.drinks || INIT_DRINKS);
+  const [cats, setCats] = useState(() => bootCache?.cats || INIT_CATS);
+  const [settings, setSettings] = useState(() => bootCache ? normalizeSettings(bootCache.settings) : INIT_SETTINGS);
   const [editDrink, setEditDrink] = useState(null);
   const [orderModal, setOrderModal] = useState(false);
   const [successOrder, setSuccessOrder] = useState(null);
@@ -609,36 +644,61 @@ export default function App() {
   const [adminLoginModal, setAdminLoginModal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [missionOpen, setMissionOpen] = useState(false);
+  const [slowBoot, setSlowBoot] = useState(false);       // 처음 켤 때 연결이 느림
+  const [freshSettings, setFreshSettings] = useState(false); // 이번 접속에서 서버 설정을 받았는지
 
+  // 시작: ① 기기에 저장된 마지막 설정·메뉴로 바로 화면 표시 → ② 서버 최신값으로 갱신
+  // 저장된 값이 없고 연결이 느리면 옛날 기본 화면 대신 '불러오는 중'을 계속 보여 줌
   useEffect(() => {
-    const fallback = setTimeout(() => { console.warn('Firebase timeout'); setBooting(false); }, 10000);
-    Promise.all([getStoredUser(), getStoredSettings(), getStoredDrinks(), getStoredCats()])
-      .then(([user, stored, storedDrinks, storedCats]) => {
-        clearTimeout(fallback);
-        if (user) setUserName(user);
-        if (stored) setSettings(() => ({
-          ...INIT_SETTINGS, ...stored,
-          school: { ...INIT_SETTINGS.school, ...(stored.school||{}) },
-          banner: { ...INIT_SETTINGS.banner, ...(stored.banner||{}) },
-          deliveryHours: { ...INIT_DH, ...(stored.deliveryHours||{}) },
-          adminPassword: stored.adminPassword || INIT_SETTINGS.adminPassword,
-          themeId: stored.themeId || INIT_SETTINGS.themeId,
-          // 예전 게임 주소가 자동으로 저장돼 있던 경우 → 도트판으로. 관리자가 직접 고른 주소는 그대로.
-          missionUrl: (!stored.missionUrl || (stored.missionUrl === LEGACY_MISSION_URL && !stored.missionUrlManual)) ? INIT_SETTINGS.missionUrl : stored.missionUrl,
-          dailyLimit: stored.dailyLimit ?? INIT_SETTINGS.dailyLimit,
-          slotLimit: stored.slotLimit ?? INIT_SETTINGS.slotLimit,
-          orderStartEnabled: stored.orderStartEnabled ?? INIT_SETTINGS.orderStartEnabled,
-          orderStartTime: stored.orderStartTime || INIT_SETTINGS.orderStartTime,
-          quizEnabled: stored.quizEnabled ?? INIT_SETTINGS.quizEnabled,
-          quizTitle: stored.quizTitle || INIT_SETTINGS.quizTitle,
-          quizQuestions: (stored.quizQuestions && stored.quizQuestions.length) ? stored.quizQuestions : INIT_SETTINGS.quizQuestions,
-          consentText: stored.consentText ?? INIT_SETTINGS.consentText,
-        }));
-        if (storedDrinks) setDrinks(storedDrinks);
-        if (storedCats) setCats(storedCats);
-        setBooting(false);
-      })
-      .catch(e => { clearTimeout(fallback); console.error('Boot error:',e); setBooting(false); });
+    const hasCache = !!bootCache;
+    const slow = setTimeout(() => setSlowBoot(true), 10000);
+    let gotSettings = false, gotData = false;
+    const done = () => { if (gotSettings && gotData) { clearTimeout(slow); setBooting(false); } };
+    Promise.resolve(getStoredUser()).then(u => { if (u) setUserName(u); });
+    Promise.all([getStoredDrinks(), getStoredCats()]).then(([d, c]) => {
+      if (d) setDrinks(d);
+      if (c) setCats(c);
+      if (d || c) writeBootCache({ ...(d ? { drinks: d } : {}), ...(c ? { cats: c } : {}) });
+      if (d || hasCache) { gotData = true; done(); }
+    });
+    // 설정은 실시간으로 받음: 관리자가 바꾸면 열려 있는 기기에도 바로 반영
+    const unsub = onSnapshot(doc(db, 'config', 'settings'), snap => {
+      if (snap.exists()) { const st = snap.data(); setSettings(normalizeSettings(st)); writeBootCache({ settings: st }); }
+      setFreshSettings(true);
+      gotSettings = true; done();
+    }, err => {
+      console.error('설정 실시간 수신 실패', err);
+      getStoredSettings().then(st => { if (st) { setSettings(normalizeSettings(st)); writeBootCache({ settings: st }); setFreshSettings(true); gotSettings = true; done(); } });
+    });
+    return () => { unsub(); clearTimeout(slow); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 화면으로 돌아왔을 때: 메뉴 새로 받기 + 새 버전이 배포됐으면 (주문 중이 아닐 때) 새로고침
+  const safeToReloadRef = useRef(false);
+  const isAdminRef = useRef(false);
+  useEffect(() => {
+    safeToReloadRef.current = screen === 'home' && cart.length === 0 && !orderModal && !missionOpen && !isAdmin;
+    isAdminRef.current = isAdmin;
+  }, [screen, cart.length, orderModal, missionOpen, isAdmin]);
+  useEffect(() => {
+    const onVisible = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!isAdminRef.current) {
+        Promise.all([getStoredDrinks(), getStoredCats()]).then(([d, c]) => {
+          if (isAdminRef.current) return; // 관리자가 편집 중이면 덮어쓰지 않음
+          if (d) setDrinks(d); if (c) setCats(c);
+          if (d || c) writeBootCache({ ...(d ? { drinks: d } : {}), ...(c ? { cats: c } : {}) });
+        });
+      }
+      try {
+        const mine = document.querySelector('script[type="module"][src*="/assets/index-"]')?.getAttribute('src');
+        const html = await (await fetch('/', { cache: 'no-store' })).text();
+        const latest = html.match(/\/assets\/index-[\w-]+\.js/)?.[0];
+        if (mine && latest && !mine.endsWith(latest) && safeToReloadRef.current) window.location.reload();
+      } catch { /* 오프라인 등은 무시 */ }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
   // 저장은 명시적 동작에서만 처리 (자동저장 제거)
@@ -793,7 +853,7 @@ export default function App() {
     return () => window.removeEventListener('message', onMsg);
   }, [settings.missionId, settings.missionUrl, userName]);
 
-  if (booting) return <div style={S.shell}><div style={{...S.phone,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48}}>🥤</div><div style={{color:'#888',marginTop:10}}>로딩 중...</div></div></div></div>;
+  if (booting) return <div style={S.shell}><div style={{...S.phone,display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48}}>🥤</div><div style={{color:'#888',marginTop:10}}>로딩 중...</div>{slowBoot&&<div style={{marginTop:14,fontSize:13,color:'#666',lineHeight:1.6}}>인터넷 연결이 느려요. 잠시만 기다려 주세요.<br/><button onClick={()=>window.location.reload()} style={{marginTop:10,padding:'8px 18px',border:'none',borderRadius:18,background:P,color:'#fff',fontSize:13,fontWeight:700,cursor:'pointer'}}>다시 시도</button></div>}</div></div></div>;
   if (settings.quizEnabled && !quizPassed) return <div style={S.shell}><div style={S.phone}><QuizConsentScreen title={settings.quizTitle} questions={settings.quizQuestions} consentText={settings.consentText} onPass={()=>{ setQuizPassedStore(); setQuizPassed(true); }} /></div></div>;
   if (!userName) return <div style={S.shell}><div style={S.phone}><LoginScreen onLogin={handleLogin} /></div></div>;
   if (successOrder) return <div style={S.shell}><div style={S.phone}><OrderSuccessScreen order={successOrder} onDone={()=>{setSuccessOrder(null);setScreen("home");}} /></div></div>;
@@ -801,7 +861,7 @@ export default function App() {
   return (
     <div style={S.shell}>
       <div style={S.phone}>
-        {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} deliveryHours={settings.deliveryHours} />}
+        {screen==="home"     && <HomeScreen school={settings.school} banner={settings.banner} categories={cats.filter(c=>c.visible)} onSelect={cat=>{setSelCat(cat);setScreen("list");}} onAdmin={()=>{ if(!freshSettings){ notify('설정을 불러오는 중이에요. 잠시 후 다시 눌러 주세요'); return; } if(isAdmin){setAdminTab("drinks");setScreen("admin");}else{setAdminLoginModal(true);} }} cartCount={cartCount} onCart={()=>setScreen("cart")} userName={userName} onHistory={()=>setScreen("history")} dailyLimit={settings.dailyLimit??15} deliveryHours={settings.deliveryHours} />}
         {screen==="list"     && <ListScreen category={selCat} drinks={drinks.filter(d=>{ if(d.visible===false) return false; if(!selCat) return true; if(selCat.label?.includes('추천')||selCat.icon==='⭐') return d.featured===true||d.categoryId===selCat.id; return d.categoryId===selCat.id; })} onBack={()=>setScreen("home")} onSelect={d=>{setSelDrink(d);setScreen("detail");}} cartCount={cartCount} onCart={()=>setScreen("cart")} />}
         {screen==="detail"   && selDrink && <DetailScreen drink={{...selDrink, sizes: visibleSizes(selDrink, settings)}} onBack={()=>setScreen("list")} onAddToCart={addToCart} qtyLocked={!!couponOnlyStatus(settings)} />}
         {screen==="cart"     && <CartScreen cart={cart} totalPrice={cartTotal} onBack={()=>setScreen("home")} onRemove={id=>setCart(p=>p.filter(i=>i.cartId!==id))} onCheckout={handleCheckout} />}
